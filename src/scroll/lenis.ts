@@ -45,12 +45,19 @@ export function getLenis(): Lenis | null {
   return lenisInstance;
 }
 
+let cachedTrackHeight = 0;
+let lastTrackHeightTime = 0;
+
 export function scrollToProgress(progress: number, immediate = false): void {
-  const track = (document.querySelector('[data-track]') || document.querySelector('[data-scroll-track]')) as HTMLElement | null;
-  const trackHeight = track
-    ? track.offsetHeight - window.innerHeight
-    : document.documentElement.scrollHeight - window.innerHeight;
-  const targetY = Math.max(0, Math.min(trackHeight, progress * trackHeight));
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  if (now - lastTrackHeightTime > 500 || cachedTrackHeight === 0) {
+    const track = (document.querySelector('[data-track]') || document.querySelector('[data-scroll-track]')) as HTMLElement | null;
+    cachedTrackHeight = track
+      ? track.offsetHeight - window.innerHeight
+      : document.documentElement.scrollHeight - window.innerHeight;
+    lastTrackHeightTime = now;
+  }
+  const targetY = Math.max(0, Math.min(cachedTrackHeight, progress * cachedTrackHeight));
 
   if (lenisInstance && !(lenisInstance as any).isDestroyed) {
     lenisInstance.scrollTo(targetY, { immediate, force: true });

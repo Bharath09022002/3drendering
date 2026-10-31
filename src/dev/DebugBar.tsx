@@ -85,22 +85,26 @@ export function DebugBar() {
     let animId: number;
     let tickCount = 0;
     const update = () => {
-      const m = masterProgress.current;
-      const leg = scrollProgress.current;
-      const fold = foldProgress.current;
-      setCurrentMaster(m);
-      setCurrentLegacy(leg);
-      setCurrentFold(fold);
+      // Update HUD state every 6 frames (~10fps) to avoid React re-render overhead during 60fps active scroll
+      tickCount++;
+      if (tickCount % 6 === 0) {
+        const m = masterProgress.current;
+        const leg = scrollProgress.current;
+        const fold = foldProgress.current;
+        setCurrentMaster(m);
+        setCurrentLegacy(leg);
+        setCurrentFold(fold);
 
-      if (m >= FOLD_START && m <= FOLD_END) {
-        const foundFold = FOLD_PHASES.find((f) => m >= f.masterStart && m <= f.masterEnd);
-        if (foundFold) {
-          setSelectedScene(foundFold.id);
-        }
-      } else {
-        const found = SCENE_WINDOWS.find((s) => leg >= s.start && leg <= s.end);
-        if (found) {
-          setSelectedScene(found.id.toString());
+        if (m >= FOLD_START && m <= FOLD_END) {
+          const foundFold = FOLD_PHASES.find((f) => m >= f.masterStart && m <= f.masterEnd);
+          if (foundFold) {
+            setSelectedScene(foundFold.id);
+          }
+        } else {
+          const found = SCENE_WINDOWS.find((s) => leg >= s.start && leg <= s.end);
+          if (found) {
+            setSelectedScene(found.id.toString());
+          }
         }
       }
 

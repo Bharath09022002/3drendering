@@ -25,14 +25,18 @@ export function initSpikeLogger(): void {
 
   isLoggerActive = true;
   let lastTime = performance.now();
+  let lastProgress = scrollProgress.current;
 
   const measureFrame = (time: number) => {
     const dt = time - lastTime;
     lastTime = time;
 
-    // Detect frame duration exceeding 20ms (> 50fps drop)
-    if (dt > 20.0) {
-      const p = scrollProgress.current;
+    const p = scrollProgress.current;
+    const isMoving = Math.abs(p - lastProgress) > 1e-4;
+    lastProgress = p;
+
+    // Detect frame duration exceeding 20ms (> 50fps drop) during active scroll
+    if (dt > 20.0 && isMoving) {
       const found = SCENE_WINDOWS.find((s) => p >= s.start && p <= s.end);
       const sceneId = found ? found.id : (p > 0.9 ? 11 : 1);
 

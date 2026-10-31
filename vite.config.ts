@@ -10,7 +10,8 @@ export default defineConfig({
   },
   preview: {
     port: 4173,
-    host: true
+    host: '0.0.0.0',
+    allowedHosts: ['threedrendering-jtel.onrender.com'],
   },
   build: {
     target: 'es2020',

@@ -3,6 +3,7 @@ import { useMemo, useRef, useLayoutEffect, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { scrollProgress, getLocalProgress, isInWindow, W } from '../scroll/progress';
+import { isWarmupActive } from './World';
 import { PALETTE } from '../config/palette';
 import { getQuality } from '../config/quality';
 
@@ -390,7 +391,7 @@ export function CityScene() {
   useFrame(() => {
     if (!groupRef.current) return;
     const p = scrollProgress.current;
-    const inWin = isInWindow(p, START, END, 0.005);
+    const inWin = isWarmupActive.current || isInWindow(p, START, END, 0.005);
     groupRef.current.visible = inWin;
 
     if (!inWin) return;

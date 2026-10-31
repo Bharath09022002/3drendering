@@ -11,6 +11,7 @@ import { StoryLayer } from './fold/StoryLayer';
 import { StoryWindow } from './fold/StoryWindow';
 import { Foldable } from './fold/Foldable';
 
+export const isWarmupActive = { current: true };
 const tempCamPos = new THREE.Vector3();
 const tempCamLook = new THREE.Vector3();
 const COLOR_DAY_MINT = new THREE.Color(PALETTE.bg);
@@ -74,25 +75,70 @@ export function World() {
 
   useEffect(() => {
     // Precompile scene shaders on initial mount to eliminate shader hitches during scroll.
-    // Temporarily expose all hidden objects and layers so WebGL compiles every material upfront.
+    // Temporarily expose all hidden objects, disable frustum culling, and enable all layers
+    // so Three.js WebGLRenderer projects and compiles every mesh and material across all scenes upfront.
     const hiddenObjects: THREE.Object3D[] = [];
+    const culledStates = new Map<THREE.Mesh, boolean>();
+
     scene.traverse((obj) => {
       if (!obj.visible) {
         hiddenObjects.push(obj);
         obj.visible = true;
       }
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        culledStates.set(mesh, mesh.frustumCulled);
+        mesh.frustumCulled = false;
+      }
     });
 
     const originalLayers = camera.layers.mask;
-    camera.layers.enable(0);
-    camera.layers.enable(1);
+    camera.layers.mask = 0xffffffff;
 
+    const originalCamPos = camera.position.clone();
+    const originalCamRot = camera.quaternion.clone();
+
+    // Multi-station upfront shader precompilation:
+    // 1. Scene 1-5 Origin Station (x = 0)
     gl.compile(scene, camera);
 
+    // 2. Scene 8-9 City & Transit Station (x = 18, y = 3, z = 6 looking at x = 20, y = 0, z = -2)
+    camera.position.set(18, 3, 6);
+    camera.lookAt(20, 0, -2);
+    camera.updateMatrixWorld();
+    gl.compile(scene, camera);
+
+    // 3. Scene 10 Apartment Entrance Station (x = 38.5, y = 1.8, z = 7.5 looking at x = 38.5, y = 1.2, z = 4)
+    camera.position.set(38.5, 1.8, 7.5);
+    camera.lookAt(38.5, 1.2, 4);
+    camera.updateMatrixWorld();
+    gl.compile(scene, camera);
+
+    // Upfront Shadow Camera compile: widen frustum temporarily to [-60, +60] so all scenes are precompiled
+    if (dirLightRef.current && dirLightRef.current.shadow?.camera) {
+      const shadowCam = dirLightRef.current.shadow.camera;
+      const origLeft = shadowCam.left;
+      const origRight = shadowCam.right;
+      shadowCam.left = -60;
+      shadowCam.right = 60;
+      shadowCam.updateProjectionMatrix();
+
+      gl.compile(scene, shadowCam);
+
+      shadowCam.left = origLeft;
+      shadowCam.right = origRight;
+      shadowCam.updateProjectionMatrix();
+    }
+
+    camera.position.copy(originalCamPos);
+    camera.quaternion.copy(originalCamRot);
+    camera.updateMatrixWorld();
     camera.layers.mask = originalLayers;
     hiddenObjects.forEach((obj) => {
       obj.visible = false;
     });
+    // Note: mesh.frustumCulled stays false for initial warmup frames so EffectComposer (N8AO, Bloom, shadows)
+    // compiles shaders for all scenes before user scroll begins, then gets restored in useFrame.
 
     // Apply max anisotropy (min 16, max supported) and mipmaps to all textures
     const maxAniso = Math.min(16, gl.capabilities.getMaxAnisotropy());
@@ -153,12 +199,24 @@ export function World() {
         pipeline.envIntensity = (scene as any).environmentIntensity ?? 1.0;
       }
 
-      if (window.location.search.includes('debug=1')) {
-        penetrationTimer.current += dt;
-        if (penetrationTimer.current > 0.5) {
-          penetrationTimer.current = 0;
-          runPenetrationCheck(scene);
-        }
+      // Expose penetration checker for gate validation on demand without bogging down active scroll
+      if (window.location.search.includes('debug=1') && !(window as any).__RUN_PENETRATION_CHECK__) {
+        (window as any).__RUN_PENETRATION_CHECK__ = () => runPenetrationCheck(scene);
+      }
+    }
+
+    // Warmup frame countdown: keeps all scene groups visible and unculled for initial 4 frames
+    // so EffectComposer (N8AO, Bloom, SMAA) and shadow passes compile all scene shaders upfront
+    if (isWarmupActive.current) {
+      penetrationTimer.current += 1;
+      if (penetrationTimer.current >= 4) {
+        isWarmupActive.current = false;
+        // Restore standard frustum culling across all meshes for maximum scroll performance
+        scene.traverse((obj) => {
+          if ((obj as THREE.Mesh).isMesh) {
+            (obj as THREE.Mesh).frustumCulled = true;
+          }
+        });
       }
     }
     const p = scrollProgress.current;
@@ -336,8 +394,8 @@ export function World() {
             aoRadius={0.6}
             distanceFalloff={2.0}
             intensity={quality.enableAO ? 1.8 : 0}
-            quality={quality.tierName === 'Ultra' ? 'high' : 'medium'}
-            halfRes={quality.tierName !== 'Ultra'}
+            quality="medium"
+            halfRes={true}
             color="#020617"
           />
           <DynamicBloom />

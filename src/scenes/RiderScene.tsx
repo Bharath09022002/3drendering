@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { scrollProgress, getLocalProgress, isInWindow, W, seg } from '../scroll/progress';
+import { isWarmupActive } from './World';
 import { PALETTE } from '../config/palette';
 import { BlobShadow } from './models/BlobShadow';
 import { Human, HumanRef } from './models/Human';
@@ -24,7 +25,7 @@ export function RiderScene() {
   useFrame(() => {
     if (!groupRef.current) return;
     const p = scrollProgress.current;
-    const inWin = isInWindow(p, START, END);
+    const inWin = isWarmupActive.current || isInWindow(p, START, END);
     groupRef.current.visible = inWin;
 
     if (!inWin) return;

@@ -7,6 +7,7 @@ import { PALETTE } from '../../config/palette';
 import { BlobShadow } from './BlobShadow';
 import { Human, HumanRef } from './Human';
 import { seg, scrollProgress, getLocalProgress, W } from '../../scroll/progress';
+import { isWarmupActive } from '../World';
 
 export interface ApartmentHandoverProps {
   localP?: number;
@@ -38,7 +39,7 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
       ? getLocalProgress(p, W.customerReceives.start, W.customerReceives.end)
       : propLocalP;
 
-    isCourierVisibleRef.current = localP >= 0.18;
+    isCourierVisibleRef.current = isWarmupActive.current || localP >= 0.18;
     if (courierGroupRef.current) {
       courierGroupRef.current.visible = isCourierVisibleRef.current;
     }

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { scrollProgress, masterProgress, foldProgress, FOLD_START } from '../../scroll/progress';
 import { getCameraTransform, cameraDroneRoll } from '../../camera/keyframes';
 import { getQuality } from '../../config/quality';
+import { isWarmupActive } from '../World';
 
 let globalStoryFBO: THREE.WebGLRenderTarget | null = null;
 
@@ -99,7 +100,7 @@ export function StoryWindow() {
     );
 
     // Main camera layer coordination:
-    const isHandover = f >= 0.90 || m > 0.384; // FOLD_END
+    const isHandover = isWarmupActive.current || f >= 0.90 || m > 0.384; // FOLD_END
     if (forceDirect || isHandover) {
       state.camera.layers.enable(1);
     } else {
