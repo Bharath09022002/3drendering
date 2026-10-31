@@ -125,13 +125,13 @@ export function App() {
       {/* Pinned HTML Copy Overlays */}
       <Copy />
 
-      {/* Master Scroll Track (2400vh) */}
+      {/* Master Scroll Track scaled by 1.25 (3000vh = 2400vh * 1.25) to preserve exact per-scene pixel scroll length */}
       <div
         ref={scrollContainerRef}
         data-track="true"
         data-scroll-track="true"
         className="relative z-10 w-full pointer-events-none"
-        style={{ height: '2400vh' }}
+        style={{ height: '3000vh' }}
       >
         {/* Transparent virtual scroll container driving master progress */}
       </div>

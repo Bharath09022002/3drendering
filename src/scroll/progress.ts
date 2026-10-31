@@ -1,13 +1,16 @@
 // src/scroll/progress.ts
 // Continuous sub-pixel float reference driving all 3D scene elements and camera frames.
-// CRITICAL: Sourced directly from Lenis smooth scroll engine as a readonly getter.
+// Sourced directly from Lenis smooth scroll engine with dual-track master/legacy progress remapping.
 import { getLenis } from './lenis';
 
 export interface ScrollProgressRef {
   readonly current: number;
 }
 
-export const scrollProgress: ScrollProgressRef = {
+/**
+ * Raw master progress directly from Lenis smooth scroll engine [0, 1].
+ */
+export const masterProgress: ScrollProgressRef = {
   get current(): number {
     const lenis = getLenis();
     if (lenis && !(lenis as any).isDestroyed) {
@@ -20,6 +23,127 @@ export const scrollProgress: ScrollProgressRef = {
     return 0;
   },
 };
+
+/**
+ * FOLDABLE UNMAP CONSTANTS:
+ * FOLD_SPAN f = 0.20 of the master track.
+ * fold start s = 0.23 * (1 - f) = 0.184 (seamlessly right after Scene 4 order placed)
+ * fold end = s + f = 0.384
+ */
+export const FOLD_SPAN = 0.20;
+export const FOLD_START = 0.23 * (1 - FOLD_SPAN); // 0.184
+export const FOLD_END = FOLD_START + FOLD_SPAN;   // 0.384
+
+/**
+ * Remap master progress [0, 1] to legacy story progress [0, 1].
+ * During the fold window [FOLD_START, FOLD_END] (master 0.184 to 0.384),
+ * the story actively progresses through Scene 5 (orderToCloud 0.23 to 0.31)
+ * inside the expanding foldable screen.
+ */
+export function legacyProgress(master: number): number {
+  if (master < FOLD_START) {
+    return master / (1 - FOLD_SPAN);
+  }
+  if (master <= FOLD_END) {
+    const f = (master - FOLD_START) / FOLD_SPAN;
+    return 0.23 + f * (0.31 - 0.23);
+  }
+  const remainingMaster = 1.0 - FOLD_END; // 0.616
+  const remainingLegacy = 1.0 - 0.31;     // 0.69
+  return 0.31 + (master - FOLD_END) * (remainingLegacy / remainingMaster);
+}
+
+export function masterToLegacy(master: number): number {
+  return legacyProgress(master);
+}
+
+/**
+ * Inverse mapping: converts legacy story progress [0, 1] to master scroll progress [0, 1].
+ */
+export function legacyToMaster(legacy: number): number {
+  if (legacy < 0.23) {
+    return legacy * (1 - FOLD_SPAN);
+  }
+  if (legacy <= 0.31) {
+    const f = (legacy - 0.23) / (0.31 - 0.23);
+    return FOLD_START + f * FOLD_SPAN;
+  }
+  const remainingMaster = 1.0 - FOLD_END;
+  const remainingLegacy = 1.0 - 0.31;
+  return FOLD_END + (legacy - 0.31) * (remainingMaster / remainingLegacy);
+}
+
+/**
+ * Normalized fold progress [0, 1] within the fold window [FOLD_START, FOLD_END].
+ */
+export function getFoldProgress(master: number): number {
+  return Math.min(Math.max((master - FOLD_START) / FOLD_SPAN, 0), 1);
+}
+
+export const foldProgress: ScrollProgressRef = {
+  get current(): number {
+    return getFoldProgress(masterProgress.current);
+  },
+};
+
+/**
+ * Preserved read-only scrollProgress for all existing scenes, camera rig, and consumers.
+ * Seamlessly transparent: returns legacyProgress(masterProgress.current).
+ */
+export const scrollProgress: ScrollProgressRef = {
+  get current(): number {
+    return legacyProgress(masterProgress.current);
+  },
+};
+
+export interface FoldPhaseDef {
+  id: string;
+  key: string;
+  name: string;
+  foldStart: number;
+  foldEnd: number;
+  masterStart: number;
+  masterEnd: number;
+}
+
+export const FOLD_PHASES: readonly FoldPhaseDef[] = [
+  {
+    id: 'fold-a',
+    key: 'foldA',
+    name: 'Fold Phase A (Phone Swap)',
+    foldStart: 0.00,
+    foldEnd: 0.12,
+    masterStart: FOLD_START + 0.00 * FOLD_SPAN,
+    masterEnd: FOLD_START + 0.12 * FOLD_SPAN,
+  },
+  {
+    id: 'fold-b',
+    key: 'foldB',
+    name: 'Fold Phase B (Unfold Device)',
+    foldStart: 0.12,
+    foldEnd: 0.45,
+    masterStart: FOLD_START + 0.12 * FOLD_SPAN,
+    masterEnd: FOLD_START + 0.45 * FOLD_SPAN,
+  },
+  {
+    id: 'fold-c',
+    key: 'foldC',
+    name: 'Fold Phase C (Screen Expands)',
+    foldStart: 0.45,
+    foldEnd: 0.90,
+    masterStart: FOLD_START + 0.45 * FOLD_SPAN,
+    masterEnd: FOLD_START + 0.90 * FOLD_SPAN,
+  },
+  {
+    id: 'fold-d',
+    key: 'foldD',
+    name: 'Fold Phase D (Handover & Settle)',
+    foldStart: 0.90,
+    foldEnd: 1.00,
+    masterStart: FOLD_START + 0.90 * FOLD_SPAN,
+    masterEnd: FOLD_START + 1.00 * FOLD_SPAN,
+  },
+] as const;
 
 export interface SceneWindowDef {
   id: number;

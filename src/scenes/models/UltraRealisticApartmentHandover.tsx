@@ -56,198 +56,132 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
     }
 
     // =========================================================================
-    // COMPLETE 5-PHASE CINEMATIC DISMOUNT & HANDOVER SEQUENCE
+    // COMPLETE 4-PHASE CINEMATIC APPROACH & HANDOVER SEQUENCE
+    // Driver ALWAYS faces and makes direct eye contact with the customer
     // =========================================================================
 
-    // Scooter curb location in local ReceiveScene space: [-1.20, 0, 0.15]
+    // Walkway approach location: [-0.85, 0, -0.20]
     // Porch handover location in front of customer: [-0.15, 0, -0.30]
     // Customer doorstep location: [0.55, 0, -0.30]
 
-    if (localP < 0.18) {
-      // -----------------------------------------------------------------------
-      // Phase 1: Scooter pulling up curbside; courier still seated on scooter
-      // -----------------------------------------------------------------------
-      if (customerGroupRef.current) {
-        customerGroupRef.current.position.set(0.75, 0, -0.65);
-        customerGroupRef.current.rotation.y = -0.35;
-      }
-      customerRef.current?.setPose({
-        distanceWalked: 0,
-        isWalking: false,
-        reachAmount: 0,
-        headLook: -0.25,
-        seated: false,
-      });
+    isCourierVisibleRef.current = true;
+    if (courierGroupRef.current) {
+      courierGroupRef.current.visible = true;
+    }
 
-      if (courierGroupRef.current) {
-        courierGroupRef.current.position.set(-1.20, 0, 0.15);
-        courierGroupRef.current.rotation.y = 1.35;
-      }
-      courierRef.current?.setPose({
-        distanceWalked: 0,
-        isWalking: false,
-        reachAmount: 0,
-        seated: false,
-      });
-
-      if (packageRef.current) {
-        // In scooter cargo box
-        packageRef.current.position.set(-1.20, 1.14, -0.35);
-        packageRef.current.rotation.set(0, 0.35, 0);
-      }
-    } else if (localP < 0.32) {
+    if (localP < 0.30) {
       // -----------------------------------------------------------------------
-      // Phase 2: Driver dismounts and retrieves parcel from cargo box
+      // Phase 1: Courier walks up walkway towards customer, directly facing them
       // -----------------------------------------------------------------------
-      const dismountT = seg(localP, 0.18, 0.32);
-
-      if (customerGroupRef.current) {
-        customerGroupRef.current.position.set(0.75, 0, -0.65);
-        customerGroupRef.current.rotation.y = -0.35;
-      }
-      customerRef.current?.setPose({
-        distanceWalked: 0,
-        isWalking: false,
-        reachAmount: 0,
-        headLook: -0.30,
-        seated: false,
-      });
-
-      // Courier turns toward cargo box and lifts parcel
-      if (courierGroupRef.current) {
-        courierGroupRef.current.position.set(-1.20, 0, 0.15);
-        // Turn from facing scooter to facing cargo box to facing customer
-        courierGroupRef.current.rotation.y = THREE.MathUtils.lerp(1.35, -0.85, dismountT);
-      }
-      courierRef.current?.setPose({
-        distanceWalked: 0,
-        isWalking: false,
-        reachAmount: Math.sin(dismountT * Math.PI) * 0.85 + dismountT * 0.5,
-        lean: 0.10 * (1 - dismountT),
-        seated: false,
-      });
-
-      // Parcel moves from cargo box to courier hands in front of chest
-      if (packageRef.current) {
-        const pkgX = THREE.MathUtils.lerp(-1.20, -1.05, dismountT);
-        const pkgY = THREE.MathUtils.lerp(1.14, 1.05, dismountT);
-        const pkgZ = THREE.MathUtils.lerp(-0.35, 0.15, dismountT);
-        packageRef.current.position.set(pkgX, pkgY, pkgZ);
-        packageRef.current.rotation.set(0, THREE.MathUtils.lerp(0.35, -0.85, dismountT), 0);
-      }
-    } else if (localP < 0.60) {
-      // -----------------------------------------------------------------------
-      // Phase 3: Driver walks across walkway carrying parcel to customer
-      // -----------------------------------------------------------------------
-      const walkT = seg(localP, 0.32, 0.60);
-      const courierX = THREE.MathUtils.lerp(-1.20, -0.15, walkT);
-      const courierZ = THREE.MathUtils.lerp(0.15, -0.30, walkT);
-      const walkDist = walkT * 1.15;
+      const walkT = seg(localP, 0.0, 0.30);
+      const courierX = THREE.MathUtils.lerp(-0.85, -0.15, walkT);
+      const courierZ = THREE.MathUtils.lerp(-0.15, -0.30, walkT);
+      const walkDist = walkT * 0.70;
 
       if (courierGroupRef.current) {
         courierGroupRef.current.position.set(courierX, 0, courierZ);
-        courierGroupRef.current.rotation.y = -1.15; // Facing toward customer on porch
+        // Directly facing customer (+X direction = 1.57 rad)
+        courierGroupRef.current.rotation.y = 1.57;
       }
       courierRef.current?.setPose({
         distanceWalked: walkDist,
-        isWalking: true,
-        reachAmount: 0.55, // Holding parcel securely with both hands
+        isWalking: walkT < 0.95,
+        reachAmount: 0.65, // Holding parcel securely with both hands forward
+        headLook: 0.0, // Looking straight at customer
         seated: false,
       });
 
-      // Customer steps forward onto porch mat to receive driver
-      const customerStepT = seg(localP, 0.40, 0.60);
-      const customerX = THREE.MathUtils.lerp(0.75, 0.55, customerStepT);
-      const customerZ = THREE.MathUtils.lerp(-0.65, -0.30, customerStepT);
-
+      // Customer on porch threshold waiting and greeting courier
       if (customerGroupRef.current) {
-        customerGroupRef.current.position.set(customerX, 0, customerZ);
-        customerGroupRef.current.rotation.y = -0.45;
+        customerGroupRef.current.position.set(0.55, 0, -0.30);
+        customerGroupRef.current.rotation.y = -1.57; // Directly facing courier (-X direction)
       }
       customerRef.current?.setPose({
-        distanceWalked: customerStepT * 0.40,
-        isWalking: customerStepT > 0.05 && customerStepT < 0.95,
-        reachAmount: customerStepT * 0.4,
-        headLook: -0.15,
+        distanceWalked: 0,
+        isWalking: false,
+        reachAmount: 0.25,
+        headLook: 0.0,
         seated: false,
       });
 
-      // Parcel moves rigidly with courier hands
       if (packageRef.current) {
-        packageRef.current.position.set(courierX + 0.18, 1.05, courierZ - 0.08);
-        packageRef.current.rotation.set(0, -1.15, 0);
+        packageRef.current.position.set(courierX + 0.28, 1.05, courierZ);
+        packageRef.current.rotation.set(0, 1.57, 0);
       }
-    } else if (localP < 0.82) {
+    } else if (localP < 0.75) {
       // -----------------------------------------------------------------------
-      // Phase 4: Direct Handover & Digital Verification
+      // Phase 2: Direct Face-to-Face Handover & Digital Verification Pulse
       // -----------------------------------------------------------------------
-      const handoverT = seg(localP, 0.60, 0.82);
+      const handoverT = seg(localP, 0.30, 0.75);
 
       if (courierGroupRef.current) {
         courierGroupRef.current.position.set(-0.15, 0, -0.30);
-        courierGroupRef.current.rotation.y = -1.15;
+        courierGroupRef.current.rotation.y = 1.57; // Exactly facing customer (+X)
       }
       courierRef.current?.setPose({
-        distanceWalked: 1.15,
+        distanceWalked: 0.70,
         isWalking: false,
-        reachAmount: 1.0 - handoverT * 0.7, // Extends arms then lowers
-        headLook: 0.15 * Math.sin(handoverT * Math.PI), // Acknowledging nod
+        reachAmount: 1.0 - handoverT * 0.4, // Extends parcel forward to customer
+        headLook: -0.05 + 0.12 * Math.sin(handoverT * Math.PI), // Eye contact with warm nod
         seated: false,
       });
 
       if (customerGroupRef.current) {
         customerGroupRef.current.position.set(0.55, 0, -0.30);
-        customerGroupRef.current.rotation.y = -0.45;
+        customerGroupRef.current.rotation.y = -1.57; // Exactly facing courier (-X)
       }
       customerRef.current?.setPose({
-        distanceWalked: 0.40,
+        distanceWalked: 0,
         isWalking: false,
-        reachAmount: 0.4 + handoverT * 0.6, // Reaches to take parcel
-        headLook: 0.18 * Math.sin(handoverT * Math.PI), // Grateful nod
+        reachAmount: 0.35 + handoverT * 0.65, // Reaches out and receives parcel
+        headLook: 0.05 + 0.12 * Math.sin(handoverT * Math.PI), // Eye contact smile
         seated: false,
       });
 
-      // Parcel glides smoothly from courier's grasp into customer's hands
+      // Parcel glides smoothly from courier's extended hands directly into customer's hands
       if (packageRef.current) {
-        const pkgX = THREE.MathUtils.lerp(0.03, 0.38, handoverT);
-        packageRef.current.position.set(pkgX, 1.05, -0.38);
-        packageRef.current.rotation.set(0, -0.85, 0);
+        const pkgX = THREE.MathUtils.lerp(0.12, 0.30, handoverT);
+        packageRef.current.position.set(pkgX, 1.05, -0.30);
+        packageRef.current.rotation.set(0, 1.57, 0);
       }
     } else {
       // -----------------------------------------------------------------------
-      // Phase 5: Customer steps back inside doorway with parcel; driver finishes
+      // Phase 3: Customer holding verified medicine; courier gives friendly wave
       // -----------------------------------------------------------------------
-      const backT = seg(localP, 0.82, 1.00);
+      const backT = seg(localP, 0.75, 1.00);
 
       if (courierGroupRef.current) {
         courierGroupRef.current.position.set(-0.15, 0, -0.30);
-        courierGroupRef.current.rotation.y = -0.75; // Turning back toward bike
+        courierGroupRef.current.rotation.y = 1.57;
       }
       courierRef.current?.setPose({
-        distanceWalked: 1.15,
+        distanceWalked: 0.70,
         isWalking: false,
-        reachAmount: 0,
+        reachAmount: 0.2,
         wave: backT * 0.8, // Friendly wave of goodbye
+        headLook: 0.0,
         seated: false,
       });
 
-      // Customer steps back 0.45m into apartment
-      const customerZ = THREE.MathUtils.lerp(-0.30, -0.75, backT);
+      // Customer steps back slightly into doorway holding delivery safely
+      const customerX = THREE.MathUtils.lerp(0.55, 0.65, backT);
+      const customerZ = THREE.MathUtils.lerp(-0.30, -0.65, backT);
       if (customerGroupRef.current) {
-        customerGroupRef.current.position.set(0.65, 0, customerZ);
-        customerGroupRef.current.rotation.y = -0.25;
+        customerGroupRef.current.position.set(customerX, 0, customerZ);
+        customerGroupRef.current.rotation.y = -1.57;
       }
       customerRef.current?.setPose({
-        distanceWalked: -backT * 0.45,
+        distanceWalked: -backT * 0.35,
         isWalking: backT > 0.05 && backT < 0.95,
-        reachAmount: 0.85, // Hugging parcel securely
-        headLook: 0,
+        reachAmount: 0.85, // Holding parcel securely against chest
+        headLook: 0.0,
         seated: false,
       });
 
+      // Package safely in customer's hands moving inside
       if (packageRef.current) {
-        packageRef.current.position.set(0.65, 1.05, customerZ + 0.18);
-        packageRef.current.rotation.set(0, -0.25, 0);
+        packageRef.current.position.set(customerX - 0.25, 1.05, customerZ);
+        packageRef.current.rotation.set(0, -1.57, 0);
       }
     }
   });

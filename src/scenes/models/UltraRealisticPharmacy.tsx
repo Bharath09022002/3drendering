@@ -50,7 +50,7 @@ export function UltraRealisticPharmacy() {
         {/* Main Base Body with Fluted Wood Slats */}
         <mesh position={[0, 0.52, 0]}>
           <boxGeometry args={[2.8, 1.04, 1.0]} />
-          <meshStandardMaterial color="#F8FAFC" roughness={0.3} />
+          <meshStandardMaterial color="#0B2B22" roughness={0.4} />
         </mesh>
         {/* Fluted Vertical Ribs along Counter Front */}
         {Array.from({ length: 24 }).map((_, i) => {
@@ -58,7 +58,7 @@ export function UltraRealisticPharmacy() {
           return (
             <mesh key={i} position={[x, 0.52, 0.51]}>
               <boxGeometry args={[0.045, 1.0, 0.02]} />
-              <meshStandardMaterial color="#E2E8F0" roughness={0.4} />
+              <meshStandardMaterial color="#115E59" roughness={0.35} metalness={0.15} />
             </mesh>
           );
         })}

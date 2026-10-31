@@ -2,11 +2,11 @@
 import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { scrollProgress, getLocalProgress, isInWindow, W, seg } from '../scroll/progress';
+import { scrollProgress, getLocalProgress, W, seg } from '../scroll/progress';
 import { PALETTE } from '../config/palette';
 
-const START = W.orderToCloud.start;
-const END = W.orderToCloud.end;
+const START = W.orderToCloud.start; // 0.23
+const END = W.orderToCloud.end;     // 0.31
 
 // Cloud puff coordinates for realistic airy cumulus volume
 const CLOUD_PUFFS = [
@@ -33,7 +33,8 @@ export function CloudScene() {
   useFrame(() => {
     if (!groupRef.current) return;
     const p = scrollProgress.current;
-    const inWin = isInWindow(p, START, END, 0.02);
+    // Cloud cluster visible strictly during Scene 5 (0.23 - 0.31) and disperses into Scene 6
+    const inWin = p >= START && p <= 0.325;
     groupRef.current.visible = inWin;
 
     if (!inWin) return;
@@ -41,12 +42,14 @@ export function CloudScene() {
     const localP = getLocalProgress(p, START, END);
     const easeT = seg(localP);
 
-    // Order packet ascends smoothly with glowing trail towards cloud (emerges directly from phone at 0.88)
+    // Order packet ascends smoothly towards cloud (emerges directly from phone checkout at 0.55)
     const isMobileDevice = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
-    const startX = isMobileDevice ? 0 : 0.88;
+    const startX = isMobileDevice ? 0 : 0.55;
     if (packetRef.current) {
-      packetRef.current.position.y = -0.5 + easeT * 4.4;
-      packetRef.current.position.x = startX * (1 - easeT * 0.75); // Centers as it reaches cloud
+      // Ascending parcel only visible during Scene 5; in Scene 6 DescendingCloudParcel in PharmacyScene takes over
+      packetRef.current.visible = p >= START && p <= 0.312;
+      packetRef.current.position.y = -0.3 + easeT * 4.1;
+      packetRef.current.position.x = startX * (1 - easeT); // Centers as it reaches cloud
       packetRef.current.position.z = 0.2 - easeT * 0.5;
       packetRef.current.rotation.y = easeT * Math.PI * 2.8;
       packetRef.current.rotation.x = Math.sin(easeT * Math.PI) * 0.35;
@@ -59,10 +62,17 @@ export function CloudScene() {
       }
     }
 
-    // Cloud billow subtle floating rotation
+    // Cloud billow subtle floating rotation with graceful upward drift as camera descends
     if (cloudsRef.current) {
-      cloudsRef.current.rotation.y = localP * 0.22;
-      cloudsRef.current.position.y = 3.6 + Math.sin(localP * Math.PI) * 0.12;
+      if (p <= 0.31) {
+        cloudsRef.current.rotation.y = localP * 0.22;
+        cloudsRef.current.position.y = 3.6 + Math.sin(localP * Math.PI) * 0.12;
+        cloudsRef.current.scale.setScalar(1.0);
+      } else {
+        const exitT = Math.min(1, (p - 0.31) / 0.015);
+        cloudsRef.current.position.y = 3.6 + exitT * 4.5;
+        cloudsRef.current.scale.setScalar(Math.max(0.01, 1 - exitT * 0.85));
+      }
     }
 
     // Expanding dispatch radar signal rings
@@ -79,7 +89,7 @@ export function CloudScene() {
 
   return (
     <group ref={groupRef} name="scene-5-cloud">
-      {/* 1. Ascending Glowing Prescription Order Parcel */}
+      {/* 1. Ascending Glowing Prescription Order Parcel (Story World, Layer 1) */}
       <group ref={packetRef} position={[0.88, -0.5, 0.2]}>
         {/* Parcel Thermal Box with Coral Accent Emissive Material */}
         <mesh position={[0, 0, 0]}>
@@ -116,16 +126,6 @@ export function CloudScene() {
             <meshBasicMaterial color="#FFFFFF" />
           </mesh>
         </group>
-
-        {/* Glowing Trailing Particle Aura */}
-        <mesh position={[0, -0.22, 0]}>
-          <sphereGeometry args={[0.18, 16, 16]} />
-          <meshBasicMaterial
-            color={PALETTE.accent}
-            transparent={true}
-            opacity={0.45}
-          />
-        </mesh>
       </group>
 
       {/* 2. Soft Airy Volumetric-Style Cumulus Cloud Cluster */}

@@ -397,13 +397,9 @@ export function UltraRealisticScooter({
       {/* 4. REAR INSULATED MEDICAL CARGO BOX WITH TELEMETRY DISPLAY */}
       {/* ========================================================= */}
       <group position={[0, 0.68, -0.52]}>
-        <mesh position={[0, 0.24, -0.14]}>
-          <cylinderGeometry args={[0.018, 0.018, 0.44, 12]} />
-          <meshStandardMaterial color="#374151" metalness={0.9} roughness={0.2} />
-        </mesh>
-        {/* Moulded Cargo Box Lid */}
-        <group position={[0, 0.88, -0.48]}>
-          <RoundedBox args={[0.42, 0.03, 0.48]} radius={0.015} smoothness={4} position={[0, 0, 0]} castShadow>
+        {/* Moulded Cargo Box Lid fitted cleanly flush on top of cargo box (No floating elements) */}
+        <group position={[0, 0.25, 0]}>
+          <RoundedBox args={[0.55, 0.03, 0.53]} radius={0.015} smoothness={4} position={[0, 0, 0]} castShadow>
             <meshStandardMaterial color="#1F2937" roughness={0.45} />
           </RoundedBox>
         </group>

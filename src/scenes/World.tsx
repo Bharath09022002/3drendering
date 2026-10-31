@@ -1,12 +1,15 @@
 // src/scenes/World.tsx
-import { Suspense, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { Suspense, useRef, useEffect } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Environment, ContactShadows } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { CameraRig } from '../camera/CameraRig';
 import { getCameraTransform } from '../camera/keyframes';
 import { Phone } from './Phone';
+import { StoryLayer } from './fold/StoryLayer';
+import { StoryWindow } from './fold/StoryWindow';
+import { Foldable } from './fold/Foldable';
 
 const tempCamPos = new THREE.Vector3();
 const tempCamLook = new THREE.Vector3();
@@ -29,19 +32,66 @@ const isHumanDebug = typeof window !== 'undefined' && window.location.search.inc
 import { SharedScooter } from './SharedScooter';
 import { PALETTE } from '../config/palette';
 import { getQuality } from '../config/quality';
-import { scrollProgress, W } from '../scroll/progress';
+import { scrollProgress, masterProgress, foldProgress, FOLD_START, W } from '../scroll/progress';
+
+function DynamicBloom() {
+  const bloomRef = useRef<any>(null);
+  useFrame(() => {
+    const f = foldProgress.current;
+    let target = 0.75;
+    if (f >= 0.0 && f < 0.80) {
+      target = 0.0;
+    } else if (f >= 0.80 && f <= 1.00) {
+      target = 0.75 * ((f - 0.80) / 0.20);
+    } else {
+      target = 0.75;
+    }
+    if (bloomRef.current) {
+      bloomRef.current.intensity = target;
+    }
+  });
+
+  return (
+    <Bloom
+      ref={bloomRef}
+      luminanceThreshold={0.85}
+      luminanceSmoothing={0.3}
+      intensity={0.75}
+      radius={0.6}
+      mipmapBlur
+    />
+  );
+}
 
 export function World() {
   const quality = getQuality();
+  const { gl, scene, camera } = useThree();
   const dirLightRef = useRef<THREE.DirectionalLight>(null);
   const hemiLightRef = useRef<THREE.HemisphereLight>(null);
   const rimLightRef = useRef<THREE.DirectionalLight>(null);
+  const oldPhoneGroupRef = useRef<THREE.Group>(null);
   const penetrationTimer = useRef(0);
+
+  useEffect(() => {
+    // Precompile scene shaders on initial mount to eliminate shader hitches during scroll
+    gl.compile(scene, camera);
+  }, [gl, scene, camera]);
+
+  useEffect(() => {
+    // Lights that affect the story get both Layer 0 and Layer 1
+    if (hemiLightRef.current) hemiLightRef.current.layers.enable(1);
+    if (dirLightRef.current) {
+      dirLightRef.current.layers.enable(1);
+      dirLightRef.current.target.layers.enable(1);
+    }
+    if (rimLightRef.current) rimLightRef.current.layers.enable(1);
+  }, []);
 
   useFrame(({ gl, scene }, dt) => {
     if (typeof window !== 'undefined') {
       (window as any).__THREE_DRAW_CALLS__ = gl.info.render.calls;
       (window as any).__THREE_TRIANGLES__ = gl.info.render.triangles;
+      (window as any).__RENDERER_INFO__ = gl.info;
 
       if (window.location.search.includes('debug=1')) {
         penetrationTimer.current += dt;
@@ -52,6 +102,13 @@ export function World() {
       }
     }
     const p = scrollProgress.current;
+    const m = masterProgress.current;
+
+    // Single Continuous Phone: Phone.tsx handles Scenes 1-4 until order is placed (m < FOLD_START).
+    // At m >= FOLD_START, Foldable.tsx seamlessly continues the exact same phone into the expansion sequence.
+    if (oldPhoneGroupRef.current) {
+      oldPhoneGroupRef.current.visible = m < FOLD_START;
+    }
 
     // 3 Dynamic Background stops: day mint -> pharmacy sky -> city/transit -> dusk navy
     if (p < W.cameraToPharmacy.start) {
@@ -130,7 +187,7 @@ export function World() {
         ref={dirLightRef}
         position={[8, 14, 10]}
         intensity={1.25}
-        castShadow
+        castShadow={quality.shadows}
         shadow-mapSize={quality.isMobile ? [1024, 1024] : [2048, 2048]}
         shadow-camera-near={0.5}
         shadow-camera-far={60}
@@ -166,21 +223,32 @@ export function World() {
       {isHumanDebug && <HumanDebugScene />}
 
       {/* 5. Realistic Flagship Smartphone Journey (Scenes 1 - 4) */}
-      <Phone />
+      <group ref={oldPhoneGroupRef}>
+        <Phone />
+      </group>
 
-      {/* 6. Scene 5: Airy Volumetric Cloud & Glowing Order Parcel */}
-      <CloudScene />
+      {/* New Foldable Device for Unfold Sequence (Scenes 4 -> 5 Handover) */}
+      <Foldable />
 
-      {/* 7. Subsequent Narrative Scenes */}
-      <PharmacyScene />
-      <PackingScene />
-      <RiderScene />
-      <CityScene />
-      <ReceiveScene />
-      <LogoScene />
+      {/* Story Window Offscreen FBO Camera Pass */}
+      <StoryWindow />
 
-      {/* 8. Single Continuous Shared Scooter Across Scenes 8-10 */}
-      <SharedScooter />
+      {/* Story World on Layer 1 (Scenes 5 - 11 + SharedScooter) */}
+      <StoryLayer>
+        {/* 6. Scene 5: Airy Volumetric Cloud & Glowing Order Parcel */}
+        <CloudScene />
+
+        {/* 7. Subsequent Narrative Scenes */}
+        <PharmacyScene />
+        <PackingScene />
+        <RiderScene />
+        <CityScene />
+        <ReceiveScene />
+        <LogoScene />
+
+        {/* 8. Single Continuous Shared Scooter Across Scenes 8-10 */}
+        <SharedScooter />
+      </StoryLayer>
 
       {/* Soft mint distance fog to hide city perimeter and limit draw distance */}
       <fog attach="fog" args={[PALETTE.bg, 45, 175]} />
@@ -188,13 +256,7 @@ export function World() {
       {/* 8. Cinematic Post-Processing Pipeline (Desktop 4x MSAA, High-Precision Bloom & Vignette) */}
       {quality.enablePostProcessing && (
         <EffectComposer multisampling={quality.isMobile ? 0 : 4}>
-          <Bloom
-            luminanceThreshold={0.85}
-            luminanceSmoothing={0.3}
-            intensity={0.75}
-            radius={0.6}
-            mipmapBlur
-          />
+          <DynamicBloom />
           <Vignette eskil={false} offset={0.16} darkness={0.5} />
         </EffectComposer>
       )}

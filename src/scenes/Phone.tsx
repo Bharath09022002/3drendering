@@ -3,32 +3,34 @@ import { useEffect, useRef, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
-import { scrollProgress, isInWindow, getLocalProgress, W, seg } from '../scroll/progress';
-import { PhoneScreenTexture } from './PhoneScreenTexture';
+import { scrollProgress, getLocalProgress, W, seg } from '../scroll/progress';
+import { PhoneScreenTexture, CoverScreenTexture } from './PhoneScreenTexture';
 
 interface FoldPhoneModelProps {
   screenTexture: THREE.CanvasTexture;
+  coverTexture: THREE.CanvasTexture;
 }
 
 /**
  * Ultra-Realistic Samsung Galaxy Z Fold 5 3D Model.
  * Precision proportions:
- * - Unfolded wide mini-tablet: 1.92m width x 2.32m height (~0.83 aspect ratio)
- * - Folded cover phone: 0.96m width x 2.32m height
- * - Central brushed titanium flex-hinge mechanism
- * - Left wing with outer cover display and front selfie camera
- * - Right wing with iconic triple-lens camera bump
- * - Scroll-driven mechanical butterfly unfold directly evaluated per-frame
+ * - Unfolded wide mini-tablet: 2.24m width x 2.18m height (~1.03 aspect ratio)
+ * - Folded cover phone: 1.12m width x 2.18m height
+ * - Central brushed titanium flex-hinge mechanism at X=0, Z=0.022
+ * - Fixed right wing facing forward
+ * - Left wing with outer cover display and front selfie camera, pivoting 180deg -> 0deg like a book
+ * - Dynamic shiftX = -0.56 * (1 - u) centering both closed phone and open tablet
+ * - Real-time scroll-driven typing search and order confirmation
  */
-function FoldPhoneModel({ screenTexture }: FoldPhoneModelProps) {
+function FoldPhoneModel({ screenTexture, coverTexture }: FoldPhoneModelProps) {
   const modelGroupRef = useRef<THREE.Group>(null);
-  const leftWingRef = useRef<THREE.Group>(null);
+  const leftWingPivotRef = useRef<THREE.Group>(null);
   const rightWingRef = useRef<THREE.Group>(null);
   const hingeRef = useRef<THREE.Group>(null);
 
-  // Left half inner screen UVs: [0.0, 0.5]
+  // Left half inner screen UVs: [0.0, 0.5] - Meets flush at X = 0 (zero center gap)
   const leftInnerGeom = useMemo(() => {
-    const geom = new THREE.PlaneGeometry(0.93, 2.26);
+    const geom = new THREE.PlaneGeometry(1.12, 2.14);
     const uv = geom.attributes.uv;
     for (let i = 0; i < uv.count; i++) {
       uv.setX(i, uv.getX(i) * 0.5);
@@ -36,9 +38,9 @@ function FoldPhoneModel({ screenTexture }: FoldPhoneModelProps) {
     return geom;
   }, []);
 
-  // Right half inner screen UVs: [0.5, 1.0]
+  // Right half inner screen UVs: [0.5, 1.0] - Meets flush at X = 0 (zero center gap)
   const rightInnerGeom = useMemo(() => {
-    const geom = new THREE.PlaneGeometry(0.93, 2.26);
+    const geom = new THREE.PlaneGeometry(1.12, 2.14);
     const uv = geom.attributes.uv;
     for (let i = 0; i < uv.count; i++) {
       uv.setX(i, 0.5 + uv.getX(i) * 0.5);
@@ -46,110 +48,125 @@ function FoldPhoneModel({ screenTexture }: FoldPhoneModelProps) {
     return geom;
   }, []);
 
-  // Outer cover screen UVs: maps left half [0.0, 0.5] so it displays full mobile UI
+  // Outer cover screen UVs: full [0.0, 1.0] for CoverScreenTexture
   const coverScreenGeom = useMemo(() => {
-    const geom = new THREE.PlaneGeometry(0.91, 2.24);
-    const uv = geom.attributes.uv;
-    for (let i = 0; i < uv.count; i++) {
-      uv.setX(i, uv.getX(i) * 0.5);
-    }
-    return geom;
+    return new THREE.PlaneGeometry(1.08, 2.10);
   }, []);
 
   useFrame(() => {
     const p = scrollProgress.current;
     let u = 1.0;
     let rotY = 0;
+    let rotX = 0;
 
     if (p <= W.phoneRotates.end) {
-      // Scene 1: Folded cover phone with subtle showcase rotation
+      // Scene 1: Folded cover phone with subtle showcase 3D rotation
       u = 0.0;
       const localP = getLocalProgress(p, W.phoneRotates.start, W.phoneRotates.end);
-      rotY = -Math.PI / 2 + Math.sin(localP * Math.PI) * 0.16;
+      rotY = Math.sin(localP * Math.PI) * 0.18;
+      rotX = Math.sin(localP * Math.PI) * 0.04;
     } else if (p <= W.appOpens.end) {
-      // Scene 2: Mechanical unfold from folded cover to flat tablet
+      // Scene 2: Mechanical book unfold from folded cover (180 deg) to flat tablet (0 deg)
       const localP = getLocalProgress(p, W.appOpens.start, W.appOpens.end);
       u = seg(localP, 0.05, 0.90);
-      rotY = (-Math.PI / 2) * (1 - u);
+      rotY = 0;
+      rotX = 0;
     } else {
       // Scene 3, 4, 5: Fully flat open tablet
       u = 1.0;
       rotY = 0;
+      rotX = 0;
     }
 
-    const wingAngle = (1 - u) * (Math.PI / 2);
-    if (leftWingRef.current) leftWingRef.current.rotation.y = wingAngle;
-    if (rightWingRef.current) rightWingRef.current.rotation.y = -wingAngle;
-    if (modelGroupRef.current) modelGroupRef.current.rotation.y = rotY;
+    const foldAngle = (1 - u) * Math.PI;
+    if (leftWingPivotRef.current) {
+      leftWingPivotRef.current.rotation.y = foldAngle;
+    }
+    if (modelGroupRef.current) {
+      // Shift X centers the closed phone (width 1.12) at X=0 when closed (shift=-0.56)
+      // and centers the open tablet (width 2.24) at X=0 when flat open (shift=0)
+      const shiftX = -0.56 * (1 - u);
+      modelGroupRef.current.position.x = shiftX;
+      modelGroupRef.current.rotation.y = rotY;
+      modelGroupRef.current.rotation.x = rotX;
+    }
   });
 
   return (
     <group ref={modelGroupRef} name="galaxy-z-fold-5">
-      {/* 1. CENTRAL BRUSHED TITANIUM FLEX HINGE */}
-      <group ref={hingeRef} position={[0, 0, -0.018]}>
+      {/* 1. CENTRAL BRUSHED TITANIUM FLEX HINGE (Recessed cleanly behind chassis at Z = -0.040, zero front seam) */}
+      <group ref={hingeRef} position={[0, 0, -0.040]}>
         <mesh position={[0, 0, 0]}>
-          <cylinderGeometry args={[0.024, 0.024, 2.34, 32]} />
-          <meshStandardMaterial color="#334155" metalness={0.96} roughness={0.16} />
+          <cylinderGeometry args={[0.020, 0.020, 2.20, 32]} />
+          <meshStandardMaterial color="#1E293B" metalness={0.96} roughness={0.16} />
         </mesh>
-        {[-1.17, 1.17].map((capY, i) => (
-          <mesh key={i} position={[0, capY, 0]}>
-            <cylinderGeometry args={[0.028, 0.028, 0.035, 32]} />
-            <meshStandardMaterial color="#0B7F63" metalness={0.92} roughness={0.15} />
-          </mesh>
-        ))}
       </group>
 
-      {/* 2. LEFT CHASSIS WING (Pivots at X = 0 Hinge) */}
-      <group ref={leftWingRef} position={[0, 0, 0]}>
-        {/* Chassis Body */}
-        <RoundedBox
-          args={[0.96, 2.32, 0.040]}
-          radius={0.024}
-          smoothness={4}
-          position={[-0.48, 0, 0]}
-          castShadow
-          receiveShadow
-        >
-          <meshStandardMaterial color="#1E293B" roughness={0.20} metalness={0.88} />
-        </RoundedBox>
+      {/* 2. ROTATING LEFT CHASSIS WING (Pivots at X = 0, Z = 0.022 Hinge Axis) */}
+      <group ref={leftWingPivotRef} position={[0, 0, 0.022]}>
+        <group position={[0, 0, -0.022]}>
+          {/* Chassis Body */}
+          <RoundedBox
+            args={[1.12, 2.18, 0.040]}
+            radius={0.024}
+            smoothness={4}
+            position={[-0.56, 0, 0]}
+            castShadow
+            receiveShadow
+          >
+            <meshStandardMaterial color="#1E293B" roughness={0.20} metalness={0.88} />
+          </RoundedBox>
 
-        {/* Protective Raised Display Bezel Rim */}
-        <mesh position={[-0.48, 0, 0.020]}>
-          <boxGeometry args={[0.94, 2.28, 0.004]} />
-          <meshStandardMaterial color="#0F172A" roughness={0.35} metalness={0.5} />
-        </mesh>
-
-        {/* Inner Left Flexible OLED Screen Half */}
-        <mesh
-          geometry={leftInnerGeom}
-          position={[-0.48, 0, 0.022]}
-          castShadow={false}
-          receiveShadow={false}
-        >
-          <meshBasicMaterial map={screenTexture} toneMapped={false} />
-        </mesh>
-
-        {/* Outer Cover Screen (on Back Face, visible when phone is folded) */}
-        <group position={[-0.48, 0, -0.022]} rotation={[0, Math.PI, 0]}>
-          <mesh geometry={coverScreenGeom}>
-            <meshBasicMaterial map={screenTexture} toneMapped={false} />
+          {/* Protective Raised Display Bezel Rim */}
+          <mesh position={[-0.56, 0, 0.020]}>
+            <boxGeometry args={[1.11, 2.14, 0.003]} />
+            <meshStandardMaterial color="#020617" roughness={0.35} metalness={0.5} />
           </mesh>
-          {/* Cover Screen Selfie Camera Hole */}
-          <mesh position={[0, 1.02, 0.002]}>
-            <circleGeometry args={[0.016, 24]} />
-            <meshBasicMaterial color="#0A0E17" />
+
+          {/* Inner Left Flexible OLED Screen Half */}
+          <mesh
+            geometry={leftInnerGeom}
+            position={[-0.56, 0, 0.022]}
+            castShadow={false}
+            receiveShadow={false}
+          >
+            <meshBasicMaterial
+              map={screenTexture}
+              toneMapped={false}
+              polygonOffset
+              polygonOffsetFactor={-1}
+              polygonOffsetUnits={-1}
+            />
           </mesh>
+
+          {/* Outer Cover Screen (on Back Face, swings to front when phone is folded closed) */}
+          <group position={[-0.56, 0, -0.022]} rotation={[0, Math.PI, 0]}>
+            <mesh geometry={coverScreenGeom}>
+              <meshBasicMaterial
+                map={coverTexture}
+                toneMapped={false}
+                polygonOffset
+                polygonOffsetFactor={-1}
+                polygonOffsetUnits={-1}
+              />
+            </mesh>
+            {/* Cover Screen Selfie Camera Hole */}
+            <mesh position={[0, 0.95, 0.002]}>
+              <circleGeometry args={[0.016, 24]} />
+              <meshBasicMaterial color="#0A0E17" />
+            </mesh>
+          </group>
         </group>
       </group>
 
-      {/* 3. RIGHT CHASSIS WING (Pivots at X = 0 Hinge) */}
+      {/* 3. FIXED RIGHT CHASSIS WING (Faces Forward) */}
       <group ref={rightWingRef} position={[0, 0, 0]}>
         {/* Chassis Body */}
         <RoundedBox
-          args={[0.96, 2.32, 0.040]}
+          args={[1.12, 2.18, 0.040]}
           radius={0.024}
           smoothness={4}
-          position={[0.48, 0, 0]}
+          position={[0.56, 0, 0]}
           castShadow
           receiveShadow
         >
@@ -157,48 +174,54 @@ function FoldPhoneModel({ screenTexture }: FoldPhoneModelProps) {
         </RoundedBox>
 
         {/* Protective Raised Display Bezel Rim */}
-        <mesh position={[0.48, 0, 0.020]}>
-          <boxGeometry args={[0.94, 2.28, 0.004]} />
-          <meshStandardMaterial color="#0F172A" roughness={0.35} metalness={0.5} />
+        <mesh position={[0.56, 0, 0.020]}>
+          <boxGeometry args={[1.10, 2.14, 0.003]} />
+          <meshStandardMaterial color="#020617" roughness={0.35} metalness={0.5} />
         </mesh>
 
         {/* Inner Right Flexible OLED Screen Half */}
         <mesh
           geometry={rightInnerGeom}
-          position={[0.48, 0, 0.022]}
+          position={[0.56, 0, 0.022]}
           castShadow={false}
           receiveShadow={false}
         >
-          <meshBasicMaterial map={screenTexture} toneMapped={false} />
+          <meshBasicMaterial
+            map={screenTexture}
+            toneMapped={false}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
+          />
         </mesh>
 
         {/* Under-Display Front Camera Sensor on Right Inner Half */}
-        <mesh position={[0.48, 1.02, 0.023]}>
+        <mesh position={[0.56, 0.95, 0.023]}>
           <circleGeometry args={[0.016, 24]} />
           <meshBasicMaterial color="#090D16" />
         </mesh>
 
         {/* Rear Camera Island Cluster (Back of Right Chassis) */}
-        <group position={[0.72, 0.72, -0.026]} rotation={[0, Math.PI, 0]}>
+        <group position={[0.86, 0.65, -0.026]} rotation={[0, Math.PI, 0]}>
           {/* Glass Camera Island Base */}
-          <RoundedBox args={[0.26, 0.68, 0.018]} radius={0.025} smoothness={4} position={[0, 0, 0]} castShadow>
+          <RoundedBox args={[0.26, 0.68, 0.018]} radius={0.025} smoothness={4} position={[0, 0, 0.009]} castShadow>
             <meshStandardMaterial color="#0F172A" roughness={0.15} metalness={0.7} />
           </RoundedBox>
-          {/* Triple Lens Cluster */}
+          {/* Triple Lens Cluster - Rotated to face normal outward, no front penetration */}
           {[0.20, 0.0, -0.20].map((ly, idx) => (
-            <group key={idx} position={[0, ly, 0.010]}>
-              <mesh castShadow>
-                <cylinderGeometry args={[0.062, 0.062, 0.014, 24]} />
+            <group key={idx} position={[0, ly, 0.018]}>
+              <mesh castShadow rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[0.062, 0.062, 0.008, 24]} />
                 <meshStandardMaterial color="#475569" metalness={0.96} roughness={0.12} />
               </mesh>
-              <mesh position={[0, 0, 0.008]} rotation={[Math.PI / 2, 0, 0]}>
+              <mesh position={[0, 0, 0.005]} rotation={[Math.PI / 2, 0, 0]}>
                 <cylinderGeometry args={[0.050, 0.050, 0.004, 24]} />
                 <meshStandardMaterial color="#020617" roughness={0.05} metalness={0.8} />
               </mesh>
             </group>
           ))}
           {/* Dual-Tone LED Flash */}
-          <mesh position={[0, -0.27, 0.010]}>
+          <mesh position={[0, -0.27, 0.019]}>
             <circleGeometry args={[0.024, 16]} />
             <meshBasicMaterial color="#FEF08A" />
           </mesh>
@@ -211,31 +234,35 @@ function FoldPhoneModel({ screenTexture }: FoldPhoneModelProps) {
 export function Phone() {
   const phoneGroupRef = useRef<THREE.Group>(null);
   const screenTextureManager = useMemo(() => new PhoneScreenTexture(2048, 2480), []);
+  const coverTextureManager = useMemo(() => new CoverScreenTexture(1024, 2048), []);
   const { viewport, gl } = useThree();
   const isMobile = typeof window !== 'undefined' ? (window.innerWidth < 768 || viewport.aspect < 1.0) : false;
 
   useEffect(() => {
     if (gl?.capabilities) {
-      screenTextureManager.texture.anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
+      const maxAniso = Math.min(16, gl.capabilities.getMaxAnisotropy());
+      screenTextureManager.texture.anisotropy = maxAniso;
+      coverTextureManager.texture.anisotropy = maxAniso;
     }
     return () => {
       screenTextureManager.dispose();
+      coverTextureManager.dispose();
     };
-  }, [screenTextureManager, gl]);
+  }, [screenTextureManager, coverTextureManager, gl]);
 
   useFrame(() => {
     if (!phoneGroupRef.current) return;
     const p = scrollProgress.current;
 
-    const inRange = isInWindow(p, W.phoneRotates.start, W.orderToCloud.end, 0.02);
+    const inRange = p <= W.placeOrder.end && p >= W.phoneRotates.start;
     phoneGroupRef.current.visible = inRange;
     if (!inRange) return;
 
     screenTextureManager.draw(p);
 
-    // Desktop framing: Positioned in right half (baseX = 0.95), clear of left copy
+    // Desktop framing: Dynamically adapt baseX to viewport aspect so wide tablet is never clipped
     // Mobile framing: Centered horizontally (baseX = 0)
-    const baseX = isMobile ? 0 : 0.95;
+    const baseX = isMobile ? 0 : Math.min(0.85, Math.max(0.15, 1.17 * viewport.aspect - 0.90));
     const baseY = isMobile ? -0.25 : 0;
     const baseScale = isMobile ? 0.65 : 0.82;
 
@@ -267,7 +294,10 @@ export function Phone() {
 
   return (
     <group ref={phoneGroupRef} name="hero-fold-phone-rig">
-      <FoldPhoneModel screenTexture={screenTextureManager.texture} />
+      <FoldPhoneModel
+        screenTexture={screenTextureManager.texture}
+        coverTexture={coverTextureManager.texture}
+      />
     </group>
   );
 }

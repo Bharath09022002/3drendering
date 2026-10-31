@@ -26,8 +26,8 @@ export const CAMERA_KEYFRAMES: CameraKeyframe[] = [
   // Scene 5: Order to cloud
   { progress: W.orderToCloud.end, position: new THREE.Vector3(0, 2.8, 4.8), lookAt: new THREE.Vector3(0, 3.2, 0) },
 
-  // Scene 6: Camera to pharmacy - 3D framed in right 55%
-  { progress: W.cameraToPharmacy.end, position: new THREE.Vector3(4.6, 3.2, 6.8), lookAt: new THREE.Vector3(1.2, 1.4, 0) },
+  // Scene 6: Camera to pharmacy - 3D framed prominently on counter & pharmacist
+  { progress: W.cameraToPharmacy.end, position: new THREE.Vector3(3.4, 2.2, 5.2), lookAt: new THREE.Vector3(0.9, 1.35, 0.1) },
 
   // Scene 7: Retailer packs
   { progress: W.retailerPacks.end, position: new THREE.Vector3(3.2, 2.4, 4.5), lookAt: new THREE.Vector3(0.8, 1.2, 0) },

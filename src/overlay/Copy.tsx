@@ -1,6 +1,12 @@
 // src/overlay/Copy.tsx
 import { useEffect, useState, useRef } from 'react';
-import { scrollProgress, SCENE_WINDOWS, SceneWindow, W } from '../scroll/progress';
+import {
+  scrollProgress,
+  masterProgress,
+  SCENE_WINDOWS,
+  SceneWindow,
+  W,
+} from '../scroll/progress';
 
 export function Copy() {
   const [activeScene, setActiveScene] = useState<SceneWindow>(SCENE_WINDOWS[0]);
@@ -15,11 +21,12 @@ export function Copy() {
     let animId: number;
 
     const checkProgress = () => {
+      const m = masterProgress.current;
       const p = scrollProgress.current;
 
-      // 1. Direct DOM update for top progress bar (0% React re-render overhead)
+      // 1. Direct DOM update for top progress bar (master progress across entire track)
       if (progressBarRef.current) {
-        progressBarRef.current.style.transform = `scaleX(${Math.min(1, Math.max(0, p))})`;
+        progressBarRef.current.style.transform = `scaleX(${Math.min(1, Math.max(0, m))})`;
       }
 
       // 2. Direct DOM update for transit timer during Scene 9 (0% React re-render overhead)
@@ -92,7 +99,7 @@ export function Copy() {
 
         {/* Main Narrative Overlay Block (Fixed to left 45% on desktop, top third on mobile) */}
         <div
-          className={`relative z-10 w-full md:w-[44%] max-w-lg transition-all duration-400 ease-out transform ${
+          className={`relative z-10 w-full md:w-[44%] max-w-lg transition-all duration-300 ease-out transform ${
             isAnimating ? 'opacity-0 translate-y-3' : 'opacity-100 translate-y-0'
           }`}
         >

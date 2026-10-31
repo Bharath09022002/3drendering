@@ -499,34 +499,222 @@ export class PhoneScreenTexture {
 
     // Delivery address card in right pane
     ry += 40;
-    ctx.fillStyle = '#F8FAFC';
+    const isOrderConfirmed = p >= W.placeOrder.start && ((p - W.placeOrder.start) / (W.placeOrder.end - W.placeOrder.start)) >= 0.65;
+    ctx.fillStyle = isOrderConfirmed ? '#F0FDF4' : '#F8FAFC';
     this.roundRect(ctx, rightPaneX + 45, ry, rightPaneW - 90, 140, 20);
     ctx.fill();
-    ctx.strokeStyle = '#E2E8F0';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = isOrderConfirmed ? '#059669' : '#E2E8F0';
+    ctx.lineWidth = isOrderConfirmed ? 3 : 2;
     ctx.stroke();
 
-    ctx.fillStyle = '#64748B';
-    ctx.font = '800 22px -apple-system, sans-serif';
-    ctx.fillText('DELIVER TO DOORSTEP', rightPaneX + 70, ry + 42);
-    ctx.fillStyle = '#0F172A';
-    ctx.font = '800 28px -apple-system, sans-serif';
-    ctx.fillText('Apt 4B, Indiranagar Heights, 100ft Rd', rightPaneX + 70, ry + 82);
-    ctx.fillStyle = '#0B7F63';
-    ctx.font = '700 24px -apple-system, sans-serif';
-    ctx.fillText('Direct rider handover with digital OTP', rightPaneX + 70, ry + 118);
+    if (isOrderConfirmed) {
+      ctx.fillStyle = '#059669';
+      ctx.font = '900 24px -apple-system, sans-serif';
+      ctx.fillText('✓ RX APPROVED · ASSIGNED TO CLOUD DISPATCH', rightPaneX + 70, ry + 42);
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '800 28px -apple-system, sans-serif';
+      ctx.fillText('Apt 4B, Indiranagar Heights, 100ft Rd', rightPaneX + 70, ry + 82);
+      ctx.fillStyle = '#059669';
+      ctx.font = '700 24px -apple-system, sans-serif';
+      ctx.fillText('Direct rider dispatching from Indiranagar hub', rightPaneX + 70, ry + 118);
+    } else {
+      ctx.fillStyle = '#64748B';
+      ctx.font = '800 22px -apple-system, sans-serif';
+      ctx.fillText('DELIVER TO DOORSTEP', rightPaneX + 70, ry + 42);
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '800 28px -apple-system, sans-serif';
+      ctx.fillText('Apt 4B, Indiranagar Heights, 100ft Rd', rightPaneX + 70, ry + 82);
+      ctx.fillStyle = '#0B7F63';
+      ctx.font = '700 24px -apple-system, sans-serif';
+      ctx.fillText('Direct rider handover with digital OTP', rightPaneX + 70, ry + 118);
+    }
 
-    // Big Place Order Button
+    // Dynamic Place Order Button
     const btnY = checkoutY + 1040;
-    ctx.fillStyle = '#0B7F63';
+    let btnText = 'Place Order · 15 Min Delivery ➔';
+    let btnColor = '#0B7F63';
+
+    if (p >= W.placeOrder.start) {
+      const orderProgress = (p - W.placeOrder.start) / (W.placeOrder.end - W.placeOrder.start);
+      if (orderProgress >= 0.65) {
+        btnText = '✓ ORDER PLACED · DISPATCHING ⚡';
+        btnColor = '#059669';
+      } else if (orderProgress >= 0.35) {
+        btnText = '⚡ Verifying Prescription...';
+        btnColor = '#047857';
+      }
+    }
+
+    ctx.fillStyle = btnColor;
     this.roundRect(ctx, rightPaneX + 45, btnY, rightPaneW - 90, 110, 30);
     ctx.fill();
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = '900 38px "Plus Jakarta Sans", sans-serif';
+    ctx.font = '900 36px "Plus Jakarta Sans", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Place Order · 15 Min Delivery ➔', rightPaneX + rightPaneW / 2, btnY + 70);
+    ctx.fillText(btnText, rightPaneX + rightPaneW / 2, btnY + 70);
     ctx.textAlign = 'left';
 
+    this.texture.needsUpdate = true;
+  }
+
+  public dispose(): void {
+    this.texture.dispose();
+  }
+}
+
+/**
+ * CoverScreenTexture:
+ * High-DPI Smartphone Cover Display (1024 x 2048) on the outer face of Galaxy Z Fold 5.
+ * Features the flagship emerald green Pharmafly splash screen with prominent white "P" logo,
+ * "15-MIN MEDICINE DELIVERY" badge, status bar, and network active status.
+ */
+export class CoverScreenTexture {
+  public canvas: HTMLCanvasElement;
+  public ctx: CanvasRenderingContext2D;
+  public texture: THREE.CanvasTexture;
+
+  constructor(width = 1024, height = 2048) {
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = width;
+    this.canvas.height = height;
+
+    const context = this.canvas.getContext('2d', { alpha: false });
+    if (!context) throw new Error('Failed to get 2D context for cover screen');
+    this.ctx = context;
+
+    this.texture = new THREE.CanvasTexture(this.canvas);
+    this.texture.generateMipmaps = true;
+    this.texture.minFilter = THREE.LinearMipmapLinearFilter;
+    this.texture.magFilter = THREE.LinearFilter;
+    this.texture.anisotropy = 16;
+    this.texture.colorSpace = THREE.SRGBColorSpace;
+
+    this.draw();
+  }
+
+  private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+    if (typeof (ctx as any).roundRect === 'function') {
+      ctx.beginPath();
+      (ctx as any).roundRect(x, y, w, h, r);
+      return;
+    }
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  }
+
+  public draw(): void {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    // 1. Lush Emerald Gradient Background
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#064E3B');
+    grad.addColorStop(0.5, '#0B7F63');
+    grad.addColorStop(1, '#022C22');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Subtle background glowing circles
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.12)';
+    ctx.beginPath();
+    ctx.arc(w / 2, h * 0.40, 420, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. High-Contrast Status Bar (White on emerald)
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '800 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText('9:41', 80, 85);
+
+    // Right-aligned status icons (5G, Wi-Fi, Battery)
+    const iconBaseX = w - 240;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(iconBaseX, 64, 7, 24);
+    ctx.fillRect(iconBaseX + 14, 56, 7, 32);
+    ctx.fillRect(iconBaseX + 28, 48, 7, 40);
+    ctx.fillRect(iconBaseX + 42, 40, 7, 48);
+
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 4;
+    this.roundRect(ctx, iconBaseX + 85, 46, 68, 36, 10);
+    ctx.stroke();
+    ctx.fillStyle = '#10B981';
+    this.roundRect(ctx, iconBaseX + 90, 51, 50, 26, 6);
+    ctx.fill();
+
+    ctx.fillStyle = '#FFFFFF';
+    this.roundRect(ctx, iconBaseX + 155, 58, 6, 12, 3);
+    ctx.fill();
+
+    // 3. Center Brand Showcase
+    const centerY = h * 0.38;
+
+    // White rounded brand icon tile with soft glow
+    ctx.fillStyle = '#FFFFFF';
+    this.roundRect(ctx, w / 2 - 130, centerY - 130, 260, 260, 60);
+    ctx.fill();
+
+    // Emerald "P" logo
+    ctx.fillStyle = '#0B7F63';
+    ctx.font = '900 170px "Plus Jakarta Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('P', w / 2, centerY + 58);
+
+    // Pharmafly Brand Text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '900 88px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText('Pharmafly', w / 2, centerY + 240);
+
+    // Pill badge: 15-MIN MEDICINE DELIVERY
+    const badgeW = 600;
+    const badgeH = 72;
+    const badgeY = centerY + 300;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    this.roundRect(ctx, w / 2 - badgeW / 2, badgeY, badgeW, badgeH, 36);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    ctx.fillStyle = '#A7F3D0';
+    ctx.font = '800 28px -apple-system, sans-serif';
+    ctx.fillText('⚡ 15-MIN MEDICINE DELIVERY', w / 2, badgeY + 47);
+
+    // Subtitle tagline
+    ctx.fillStyle = '#E2E8F0';
+    ctx.font = '600 32px -apple-system, sans-serif';
+    ctx.fillText('Healthcare essentials at your doorstep', w / 2, centerY + 430);
+
+    // Live network status indicator
+    ctx.fillStyle = '#34D399';
+    ctx.beginPath();
+    ctx.arc(w / 2 - 160, centerY + 490, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#D1FAE5';
+    ctx.font = '700 26px -apple-system, sans-serif';
+    ctx.fillText('Bengaluru Live Network Active', w / 2 + 10, centerY + 498);
+
+    // Bottom prompt to explore
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.font = '600 26px -apple-system, sans-serif';
+    ctx.fillText('Scroll to open prescription store ▾', w / 2, h - 180);
+
+    // Bottom home indicator bar
+    ctx.fillStyle = '#FFFFFF';
+    this.roundRect(ctx, w / 2 - 120, h - 60, 240, 10, 5);
+    ctx.fill();
+
+    ctx.textAlign = 'left';
     this.texture.needsUpdate = true;
   }
 

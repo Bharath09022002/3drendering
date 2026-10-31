@@ -1,12 +1,23 @@
 // src/dev/DebugBar.tsx
 import { useEffect, useState } from 'react';
-import { scrollProgress, SCENE_WINDOWS } from '../scroll/progress';
+import {
+  scrollProgress,
+  masterProgress,
+  foldProgress,
+  SCENE_WINDOWS,
+  FOLD_PHASES,
+  legacyToMaster,
+  FOLD_START,
+  FOLD_END,
+} from '../scroll/progress';
 import { scrollToProgress } from '../scroll/lenis';
 import { initSpikeLogger, getSpikes, FrameSpike } from './spikeLogger';
 
 export function DebugBar() {
-  const [currentProgress, setCurrentProgress] = useState(0);
-  const [selectedScene, setSelectedScene] = useState(1);
+  const [currentMaster, setCurrentMaster] = useState(0);
+  const [currentLegacy, setCurrentLegacy] = useState(0);
+  const [currentFold, setCurrentFold] = useState(0);
+  const [selectedScene, setSelectedScene] = useState<string>('1');
   const [collapsed, setCollapsed] = useState(false);
   const [spikeList, setSpikeList] = useState<FrameSpike[]>([]);
   const [charSpeed, setCharSpeed] = useState(0);
@@ -16,19 +27,39 @@ export function DebugBar() {
     initSpikeLogger();
   }, []);
 
-  // Read ?scene=N on initial load
+  // Read ?scene=N or ?scene=fold-x on initial load
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sceneParam = params.get('scene');
     if (sceneParam) {
-      const sceneId = parseInt(sceneParam, 10);
-      const found = SCENE_WINDOWS.find((s) => s.id === sceneId);
-      if (found) {
-        setSelectedScene(sceneId);
+      // Check if fold phase first
+      const foldMatch = FOLD_PHASES.find(
+        (f) => f.id.toLowerCase() === sceneParam.toLowerCase() || f.key.toLowerCase() === sceneParam.toLowerCase()
+      );
+      if (foldMatch) {
+        setSelectedScene(foldMatch.id);
         const attemptScroll = (retries = 10) => {
           const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
           if (maxScroll > 100) {
-            scrollToProgress(found.start + 0.005, true);
+            scrollToProgress(foldMatch.masterStart + 0.002, true);
+          } else if (retries > 0) {
+            setTimeout(() => attemptScroll(retries - 1), 150);
+          }
+        };
+        setTimeout(() => attemptScroll(), 150);
+        return;
+      }
+
+      // Check legacy scene
+      const sceneId = parseInt(sceneParam, 10);
+      const found = SCENE_WINDOWS.find((s) => s.id === sceneId);
+      if (found) {
+        setSelectedScene(sceneId.toString());
+        const attemptScroll = (retries = 10) => {
+          const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+          if (maxScroll > 100) {
+            const masterPos = legacyToMaster(found.start + 0.005);
+            scrollToProgress(masterPos, true);
           } else if (retries > 0) {
             setTimeout(() => attemptScroll(retries - 1), 150);
           }
@@ -38,17 +69,28 @@ export function DebugBar() {
     }
   }, []);
 
-  // Update slider display and spike list from scrollProgress
+  // Update slider display and spike list from master & legacy progress
   useEffect(() => {
     let animId: number;
     let tickCount = 0;
     const update = () => {
-      const p = scrollProgress.current;
-      setCurrentProgress(p);
+      const m = masterProgress.current;
+      const leg = scrollProgress.current;
+      const fold = foldProgress.current;
+      setCurrentMaster(m);
+      setCurrentLegacy(leg);
+      setCurrentFold(fold);
 
-      const found = SCENE_WINDOWS.find((s) => p >= s.start && p <= s.end);
-      if (found) {
-        setSelectedScene(found.id);
+      if (m >= FOLD_START && m <= FOLD_END) {
+        const foundFold = FOLD_PHASES.find((f) => m >= f.masterStart && m <= f.masterEnd);
+        if (foundFold) {
+          setSelectedScene(foundFold.id);
+        }
+      } else {
+        const found = SCENE_WINDOWS.find((s) => leg >= s.start && leg <= s.end);
+        if (found) {
+          setSelectedScene(found.id.toString());
+        }
       }
 
       // Update spikes in HUD every 10 frames to avoid React overhead
@@ -67,22 +109,34 @@ export function DebugBar() {
     return () => cancelAnimationFrame(animId);
   }, []);
 
-  const handleSceneSelect = (sceneId: number) => {
-    setSelectedScene(sceneId);
+  const handleSceneSelect = (val: string) => {
+    setSelectedScene(val);
+
+    const foldMatch = FOLD_PHASES.find((f) => f.id === val);
+    if (foldMatch) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('scene', foldMatch.id);
+      window.history.replaceState({}, '', url.toString());
+      scrollToProgress(foldMatch.masterStart + 0.002, true);
+      return;
+    }
+
+    const sceneId = parseInt(val, 10);
     const scene = SCENE_WINDOWS.find((s) => s.id === sceneId);
     if (scene) {
-      // Update URL search param
       const url = new URL(window.location.href);
       url.searchParams.set('scene', sceneId.toString());
       window.history.replaceState({}, '', url.toString());
 
-      scrollToProgress(scene.start + 0.005, true);
+      // Jump converts legacy -> master
+      const targetMaster = legacyToMaster(scene.start + 0.005);
+      scrollToProgress(targetMaster, true);
     }
   };
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
-    setCurrentProgress(val);
+    setCurrentMaster(val);
     scrollToProgress(val, true);
   };
 
@@ -110,31 +164,53 @@ export function DebugBar() {
             <label className="text-white/70 font-mono">Jump Scene:</label>
             <select
               value={selectedScene}
-              onChange={(e) => handleSceneSelect(parseInt(e.target.value, 10))}
-              className="bg-white/10 border border-white/20 rounded-lg px-2 py-1 text-white text-xs font-mono outline-none focus:border-primary"
+              onChange={(e) => handleSceneSelect(e.target.value)}
+              className="bg-white/10 border border-white/20 rounded-lg px-2 py-1 text-white text-xs font-mono outline-none focus:border-primary max-w-[210px]"
             >
-              {SCENE_WINDOWS.map((s) => (
-                <option key={s.id} value={s.id} className="bg-ink text-white">
-                  {s.id}. {s.name} ({Math.round(s.start * 100)}%-{Math.round(s.end * 100)}%)
-                </option>
-              ))}
+              <optgroup label="Scenes 1-4 (Legacy Phone)">
+                {SCENE_WINDOWS.slice(0, 4).map((s) => (
+                  <option key={s.id} value={s.id.toString()} className="bg-ink text-white">
+                    {s.id}. {s.name} ({Math.round(s.start * 100)}%-{Math.round(s.end * 100)}%)
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Foldable Sequence (Frozen p=0.32)">
+                {FOLD_PHASES.map((f) => (
+                  <option key={f.id} value={f.id} className="bg-ink text-primary font-semibold">
+                    ★ {f.name} (m={Math.round(f.masterStart * 100)}%-{Math.round(f.masterEnd * 100)}%)
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Scenes 5-11 (Story World)">
+                {SCENE_WINDOWS.slice(4).map((s) => (
+                  <option key={s.id} value={s.id.toString()} className="bg-ink text-white">
+                    {s.id}. {s.name} ({Math.round(s.start * 100)}%-{Math.round(s.end * 100)}%)
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </div>
 
           {/* Progress Slider */}
           <div className="space-y-1">
             <div className="flex justify-between font-mono text-[11px] text-white/70">
-              <span>Progress:</span>
+              <span>Master Progress:</span>
               <span className="tabular-nums font-bold text-primary">
-                {(currentProgress * 100).toFixed(1)}% (p={currentProgress.toFixed(4)})
+                {(currentMaster * 100).toFixed(1)}% (m={currentMaster.toFixed(4)})
               </span>
+            </div>
+            <div className="flex justify-between font-mono text-[10px] text-white/50">
+              <span>Legacy Story: {(currentLegacy * 100).toFixed(1)}% (p={currentLegacy.toFixed(3)})</span>
+              {currentFold > 0 && currentFold < 1 && (
+                <span className="text-emerald-400 font-bold">Fold: {(currentFold * 100).toFixed(1)}%</span>
+              )}
             </div>
             <input
               type="range"
               min="0"
               max="1"
               step="0.0001"
-              value={currentProgress}
+              value={currentMaster}
               onChange={handleSliderChange}
               className="w-full accent-primary h-1.5 bg-white/20 rounded-lg cursor-pointer"
             />
@@ -170,7 +246,7 @@ export function DebugBar() {
                 <div className="text-[9px] text-white/50">Last 5 spikes:</div>
                 {lastFiveSpikes.map((s, idx) => (
                   <div key={idx} className="flex justify-between text-white/80">
-                    <span>Scene {s.sceneId} (p={s.progress.toFixed(3)}):</span>
+                    <span>Scene {s.sceneId} (m={s.progress.toFixed(3)}):</span>
                     <span className="text-amber-300 font-bold">{s.durationMs}ms</span>
                   </div>
                 ))}

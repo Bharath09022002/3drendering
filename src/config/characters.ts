@@ -57,10 +57,10 @@ export const CHARACTER_CONFIGS: Record<string, CharacterRoleConfig> = {
     defaultClip: 'idle',
     walkClip: 'walk',
     paletteOverrides: {
-      shirt: '#F1F5F9', // Textured oatmeal knit
-      trousers: '#1E3A8A', // Indigo denim
-      hair: '#2D3748',
-      skin: '#C68642',
+      shirt: '#1D4ED8', // Rich sapphire blue knit sweater for crisp contrast
+      trousers: '#1E293B', // Charcoal trousers
+      hair: '#1F2937',
+      skin: '#E2AD82',
     },
   },
 };

@@ -2,11 +2,13 @@
 import { useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { scrollProgress } from '../scroll/progress';
+import { scrollProgress, masterProgress, foldProgress, FOLD_START, FOLD_END, smootherstep } from '../scroll/progress';
 import { getCameraTransform, cameraDroneRoll } from './keyframes';
 
 const targetPos = new THREE.Vector3();
 const targetLookAt = new THREE.Vector3();
+const storyPos = new THREE.Vector3();
+const storyLookAt = new THREE.Vector3();
 
 export function CameraRig() {
   const { camera } = useThree();
@@ -17,7 +19,53 @@ export function CameraRig() {
 
   useFrame((_, dt) => {
     const p = scrollProgress.current;
-    getCameraTransform(p, targetPos, targetLookAt);
+    const m = masterProgress.current;
+    const f = foldProgress.current;
+
+    // Direct override support for Gate 3 verification (?unfoldAngle or __FOLD_ANGLE_DEG__)
+    let globalAngleDeg: number | null = null;
+    if (typeof window !== 'undefined') {
+      const gAngle = (window as any).__FOLD_ANGLE_DEG__;
+      if (typeof gAngle === 'number') {
+        globalAngleDeg = gAngle;
+      } else {
+        const params = new URLSearchParams(window.location.search);
+        const pAngle = params.get('unfoldAngle');
+        if (pAngle !== null) {
+          globalAngleDeg = parseFloat(pAngle);
+        }
+      }
+    }
+
+    const isFoldActive = globalAngleDeg !== null || (m >= FOLD_START && m <= FOLD_END);
+
+    if (isFoldActive) {
+      const isMobile = typeof window !== 'undefined' ? (window.innerWidth < 768) : false;
+      const deviceCenterX = isMobile ? 0 : 0.25;
+      const deviceCenterY = isMobile ? -0.25 : 0;
+
+      // Base framing on the centered open device
+      const camX = deviceCenterX;
+      const camY = deviceCenterY + 0.08;
+      const camZ = 3.65;
+
+      // Continuous camera tracking:
+      // While screen expands (f from 0.05 to 0.85), camera smoothly transitions
+      // from framing the phone to the story camera pose at progress p.
+      // At f >= 0.85, main camera equals story camera pose (getCameraTransform(p)).
+      getCameraTransform(p, storyPos, storyLookAt);
+      const expandT = f <= 0.05 ? 0 : f <= 0.85 ? smootherstep((f - 0.05) / (0.85 - 0.05)) : 1.0;
+
+      if (expandT < 1.0) {
+        targetPos.set(camX, camY, camZ).lerp(storyPos, expandT);
+        targetLookAt.set(deviceCenterX, deviceCenterY, 0.05).lerp(storyLookAt, expandT);
+      } else {
+        targetPos.copy(storyPos);
+        targetLookAt.copy(storyLookAt);
+      }
+    } else {
+      getCameraTransform(p, targetPos, targetLookAt);
+    }
 
     // Support debug camera inspection angles for Gate verification (?angle=front|left|right|rear)
     if (typeof window !== 'undefined') {
@@ -49,7 +97,12 @@ export function CameraRig() {
     const safeDt = Math.min(dt, 0.05);
     const k = 1 - Math.exp(-14 * safeDt);
 
-    if (!initialized.current) {
+    if (f >= 0.895 && f <= 1.00) {
+      // Direct lock at handover to guarantee exact pose match with secondary FBO camera
+      smoothedPos.current.copy(targetPos);
+      smoothedLookAt.current.copy(targetLookAt);
+      smoothedRoll.current = 0;
+    } else if (!initialized.current) {
       smoothedPos.current.copy(targetPos);
       smoothedLookAt.current.copy(targetLookAt);
       smoothedRoll.current = cameraDroneRoll.current;
