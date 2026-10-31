@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import { scrollProgress, isInWindow, W, seg } from '../scroll/progress';
+import { isWarmupActive, warmupStationProgress } from './World';
 import { PALETTE } from '../config/palette';
 import { UltraRealisticPharmacy } from './models/UltraRealisticPharmacy';
 
@@ -25,8 +26,8 @@ export function PharmacyScene() {
 
   useFrame(() => {
     if (!groupRef.current) return;
-    const p = scrollProgress.current;
-    const inWin = isInWindow(p, START, END, 0.005);
+    const p = isWarmupActive.current ? warmupStationProgress.current : scrollProgress.current;
+    const inWin = isWarmupActive.current || isInWindow(p, START, END, 0.005);
     groupRef.current.visible = inWin;
     if (!inWin) return;
 

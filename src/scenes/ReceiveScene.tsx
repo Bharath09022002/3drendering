@@ -3,7 +3,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { scrollProgress, isInWindow, getLocalProgress, W } from '../scroll/progress';
-import { isWarmupActive } from './World';
+import { isWarmupActive, warmupStationProgress } from './World';
 import { UltraRealisticApartmentHandover } from './models/UltraRealisticApartmentHandover';
 
 const START = W.customerReceives.start;
@@ -14,7 +14,7 @@ export function ReceiveScene() {
 
   useFrame(() => {
     if (!groupRef.current) return;
-    const p = scrollProgress.current;
+    const p = isWarmupActive.current ? warmupStationProgress.current : scrollProgress.current;
     const inWin = isWarmupActive.current || isInWindow(p, START, END, 0.005);
     groupRef.current.visible = inWin;
     if (!inWin) return;

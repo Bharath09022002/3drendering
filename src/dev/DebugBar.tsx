@@ -83,11 +83,21 @@ export function DebugBar() {
   // Update slider display and spike list from master & legacy progress
   useEffect(() => {
     let animId: number;
-    let tickCount = 0;
+    let frame = 0;
     const update = () => {
-      // Update HUD state every 6 frames (~10fps) to avoid React re-render overhead during 60fps active scroll
-      tickCount++;
-      if (tickCount % 6 === 0) {
+      frame++;
+
+      // Calculate frame times and FPS
+      const now = performance.now();
+      const dtMs = now - lastTimeRef.current;
+      lastTimeRef.current = now;
+      if (dtMs > 0 && dtMs < 200) {
+        frameTimesRef.current.push(dtMs);
+        if (frameTimesRef.current.length > 30) frameTimesRef.current.shift();
+      }
+
+      // Update slider display every 12 frames (~200ms)
+      if (frame % 12 === 0) {
         const m = masterProgress.current;
         const leg = scrollProgress.current;
         const fold = foldProgress.current;
@@ -108,18 +118,8 @@ export function DebugBar() {
         }
       }
 
-      // Calculate frame times and FPS
-      const now = performance.now();
-      const dtMs = now - lastTimeRef.current;
-      lastTimeRef.current = now;
-      if (dtMs > 0 && dtMs < 200) {
-        frameTimesRef.current.push(dtMs);
-        if (frameTimesRef.current.length > 30) frameTimesRef.current.shift();
-      }
-
-      // Update spikes in HUD every 10 frames to avoid React overhead
-      tickCount++;
-      if (tickCount % 10 === 0) {
+      // Update HUD stats & metrics every 24 frames (~400ms) to eliminate React layout thrashing
+      if (frame % 24 === 0) {
         setSpikeList([...getSpikes()]);
         const metrics = (window as any).__PHARMAFLY_CHARACTER_METRICS__;
         if (metrics && typeof metrics.angularSpeed === 'number') {

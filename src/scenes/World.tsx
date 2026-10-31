@@ -12,6 +12,7 @@ import { StoryWindow } from './fold/StoryWindow';
 import { Foldable } from './fold/Foldable';
 
 export const isWarmupActive = { current: true };
+export const warmupStationProgress = { current: 0.0 };
 const tempCamPos = new THREE.Vector3();
 const tempCamLook = new THREE.Vector3();
 const COLOR_DAY_MINT = new THREE.Color(PALETTE.bg);
@@ -184,7 +185,19 @@ export function World() {
     if (rimLightRef.current) rimLightRef.current.layers.enable(1);
   }, []);
 
+  const prevProgramCount = useRef(0);
+
   useFrame(({ gl, scene }, dt) => {
+    if ((gl.info as any).programs && (gl.info as any).programs.length !== prevProgramCount.current) {
+      const progs = (gl.info as any).programs;
+      console.log(`[NEW SHADER COMPILED]: total=${progs.length}`);
+      const last = progs[progs.length - 1];
+      if (last) console.log('SHADER DETAILS:', last.name || last.id, (last as any).prefix?.split('\n').filter((l: string) => l.startsWith('#define')).join(', '));
+      prevProgramCount.current = progs.length;
+    }
+    if (!isWarmupActive.current && dt > 0.033) {
+      console.warn(`[FRAME SPIKE in useFrame]: dt=${(dt * 1000).toFixed(1)}ms p=${scrollProgress.current.toFixed(3)}`);
+    }
     if (typeof window !== 'undefined') {
       (window as any).__THREE_DRAW_CALLS__ = gl.info.render.calls;
       (window as any).__THREE_TRIANGLES__ = gl.info.render.triangles;
@@ -205,12 +218,17 @@ export function World() {
       }
     }
 
-    // Warmup frame countdown: keeps all scene groups visible and unculled for initial 4 frames
-    // so EffectComposer (N8AO, Bloom, SMAA) and shadow passes compile all scene shaders upfront
+    // Warmup frame countdown: visits key stations across scenes so EffectComposer
+    // (N8AO, Bloom, SMAA) and shadow passes compile all scene shaders and buffers upfront
+    const WARMUP_STATIONS = [0.0, 0.54, 0.70, 0.88, 0.95];
     if (isWarmupActive.current) {
-      penetrationTimer.current += 1;
-      if (penetrationTimer.current >= 4) {
+      const idx = penetrationTimer.current;
+      if (idx < WARMUP_STATIONS.length) {
+        warmupStationProgress.current = WARMUP_STATIONS[idx];
+        penetrationTimer.current += 1;
+      } else {
         isWarmupActive.current = false;
+        warmupStationProgress.current = 0.0;
         // Restore standard frustum culling across all meshes for maximum scroll performance
         scene.traverse((obj) => {
           if ((obj as THREE.Mesh).isMesh) {
@@ -273,7 +291,8 @@ export function World() {
     }
 
     // Center shadow camera frustum tightly on the active scene focus point
-    getCameraTransform(p, tempCamPos, tempCamLook);
+    const activeP = isWarmupActive.current ? warmupStationProgress.current : p;
+    getCameraTransform(activeP, tempCamPos, tempCamLook);
     if (dirLightRef.current) {
       dirLightRef.current.target.position.copy(tempCamLook);
       dirLightRef.current.position.set(tempCamLook.x + 8, tempCamLook.y + 14, tempCamLook.z + 10);

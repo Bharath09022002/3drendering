@@ -46,16 +46,22 @@ export function getLenis(): Lenis | null {
 }
 
 let cachedTrackHeight = 0;
-let lastTrackHeightTime = 0;
+
+function updateTrackHeight(): void {
+  if (typeof window === 'undefined') return;
+  const track = (document.querySelector('[data-track]') || document.querySelector('[data-scroll-track]')) as HTMLElement | null;
+  cachedTrackHeight = track
+    ? track.offsetHeight - window.innerHeight
+    : document.documentElement.scrollHeight - window.innerHeight;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', updateTrackHeight, { passive: true });
+}
 
 export function scrollToProgress(progress: number, immediate = false): void {
-  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  if (now - lastTrackHeightTime > 500 || cachedTrackHeight === 0) {
-    const track = (document.querySelector('[data-track]') || document.querySelector('[data-scroll-track]')) as HTMLElement | null;
-    cachedTrackHeight = track
-      ? track.offsetHeight - window.innerHeight
-      : document.documentElement.scrollHeight - window.innerHeight;
-    lastTrackHeightTime = now;
+  if (cachedTrackHeight <= 0) {
+    updateTrackHeight();
   }
   const targetY = Math.max(0, Math.min(cachedTrackHeight, progress * cachedTrackHeight));
 

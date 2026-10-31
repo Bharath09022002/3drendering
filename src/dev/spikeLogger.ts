@@ -39,6 +39,7 @@ export function initSpikeLogger(): void {
     if (dt > 20.0 && isMoving) {
       const found = SCENE_WINDOWS.find((s) => p >= s.start && p <= s.end);
       const sceneId = found ? found.id : (p > 0.9 ? 11 : 1);
+      console.warn(`[FRAME SPIKE]: dt=${dt.toFixed(1)}ms p=${p.toFixed(3)} scene=${sceneId}`);
 
       spikes.push({
         durationMs: Math.round(dt * 10) / 10,

@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { scrollProgress, isInWindow, getLocalProgress, W } from '../scroll/progress';
+import { isWarmupActive, warmupStationProgress } from './World';
 import { CITY_ROAD_CURVE } from './CityScene';
 import { UltraRealisticScooter } from './models/UltraRealisticScooter';
 import { Human, HumanRef } from './models/Human';
@@ -53,9 +54,9 @@ export function SharedScooter() {
 
   useFrame((_, dt) => {
     if (!scooterGroupRef.current) return;
-    const p = scrollProgress.current;
+    const p = isWarmupActive.current ? warmupStationProgress.current : scrollProgress.current;
 
-    const inRange = isInWindow(p, START_P, END_P, 0.005);
+    const inRange = isWarmupActive.current || isInWindow(p, START_P, END_P, 0.005);
     scooterGroupRef.current.visible = inRange;
     if (!inRange) return;
 

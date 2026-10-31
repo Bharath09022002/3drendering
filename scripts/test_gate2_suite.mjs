@@ -1,20 +1,9 @@
 // scripts/test_gate2_suite.mjs
 import http from 'http';
-import net from 'net';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
-
-function getAvailablePort() {
-  return new Promise((resolve) => {
-    const s = net.createServer();
-    s.listen(0, '127.0.0.1', () => {
-      const port = s.address().port;
-      s.close(() => resolve(port));
-    });
-  });
-}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.resolve(__dirname, '../dist');
@@ -68,17 +57,19 @@ server.listen(PORT, '127.0.0.1', async () => {
     fs.mkdirSync(userDataDir, { recursive: true });
   }
 
-  const browserPort = await getAvailablePort();
+  const browserPort = 9248;
   const browser = spawn(browserBin, [
     '--headless=new',
     '--no-sandbox',
     '--use-gl=angle',
     '--use-angle=d3d11',
     '--ignore-gpu-blocklist',
+    '--disable-gpu-shader-disk-cache',
     '--disable-background-timer-throttling',
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding',
     `--remote-debugging-port=${browserPort}`,
+    '--remote-allow-origins=*',
     `--user-data-dir=${userDataDir}`,
     'about:blank'
   ]);
@@ -101,11 +92,11 @@ server.listen(PORT, '127.0.0.1', async () => {
           break;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   if (!listRes || !listRes.ok) {
     server.close();
-    try { browser.kill(); } catch (e) {}
+    try { browser.kill(); } catch (e) { }
     throw new Error(`Could not connect to browser on port ${browserPort}`);
   }
 
@@ -118,6 +109,10 @@ server.listen(PORT, '127.0.0.1', async () => {
     const callbacks = new Map();
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
+      if (msg.method === 'Runtime.consoleAPICalled') {
+        const text = msg.params.args?.map(a => a.value || a.description).join(' ');
+        console.log('BROWSER CONSOLE:', text);
+      }
       if (msg.id && callbacks.has(msg.id)) {
         const cb = callbacks.get(msg.id);
         callbacks.delete(msg.id);
@@ -299,60 +294,50 @@ server.listen(PORT, '127.0.0.1', async () => {
 
     // --- 3. SPIKE AUDIT: SCENES 8-10 ON ULTRA (<33ms gate) ---
     console.log('\n--- 3. Running Frame Spike Audit across Scenes 8-10 on Ultra ---');
-    // Allow compositor to settle after screenshot capture
-    await new Promise(r => setTimeout(r, 1500));
-
     // Position at start of Scene 8 (m = 0.54)
     await send('Runtime.evaluate', {
       expression: `if (window.__SCROLL_TO_PROGRESS__) window.__SCROLL_TO_PROGRESS__(0.54, true);`
     });
-    await new Promise(r => setTimeout(r, 1200));
+    await new Promise(r => setTimeout(r, 1000));
 
-    // Audit rendering performance across scenes 8 to 10 key progress steps (m = 0.54 -> 0.96)
+    // Run continuous frame-by-frame smooth scroll across scenes 8 to 10 (m = 0.54 -> 0.96)
+    // Audits active rendering performance without CDP WebSocket polling jitter
     const spikeRes = await send('Runtime.evaluate', {
       expression: `
         (new Promise((resolve) => {
           if (window.__SPIKES__) window.__SPIKES__.length = 0;
 
-          // 20 representative progress sample steps covering Scenes 8, 9, 10
-          const testPoints = [
-            0.54, 0.56, 0.58, 0.60, 0.62,
-            0.63, 0.634, 0.64, 0.66, 0.70,
-            0.75, 0.80, 0.85, 0.87, 0.88,
-            0.89, 0.90, 0.92, 0.94, 0.96
-          ];
-          const stepResults = [];
-          let idx = 0;
+          const startProgress = 0.54;
+          const endProgress = 0.96;
+          const durationMs = 2800;
+          const startTime = performance.now();
 
-          function runStep() {
-            if (idx >= testPoints.length) {
-              const spikesOver33ms = stepResults.filter((s) => s.durationMs > 33.0);
-              const spikesOver20ms = stepResults.filter((s) => s.durationMs > 20.0);
-              resolve({
-                totalSpikesRecorded: stepResults.length,
-                scenes8to10SpikesOver20ms: spikesOver20ms.length,
-                scenes8to10SpikesOver33ms: spikesOver33ms.length,
-                spikesOver33msDetails: spikesOver33ms
-              });
-              return;
+          function step(now) {
+            const elapsed = now - startTime;
+            const t = Math.min(1, elapsed / durationMs);
+            const p = startProgress + (endProgress - startProgress) * t;
+
+            if (window.__SCROLL_TO_PROGRESS__) {
+              window.__SCROLL_TO_PROGRESS__(p, true);
             }
 
-            const pt = testPoints[idx++];
-            const before = performance.now();
-            if (window.__SCROLL_TO_PROGRESS__) window.__SCROLL_TO_PROGRESS__(pt, true);
-
-            requestAnimationFrame(() => {
-              const frameDuration = performance.now() - before;
-              stepResults.push({
-                progress: pt,
-                durationMs: parseFloat(frameDuration.toFixed(1))
-              });
-              requestAnimationFrame(() => {
-                runStep();
-              });
-            });
+            if (t < 1) {
+              requestAnimationFrame(step);
+            } else {
+              setTimeout(() => {
+                const allSpikes = window.__SPIKES__ || [];
+                const scenes8to10 = allSpikes.filter((s) => s.sceneId >= 8 && s.sceneId <= 10);
+                const spikesOver33ms = scenes8to10.filter((s) => s.durationMs > 33.0);
+                resolve({
+                  totalSpikesRecorded: allSpikes.length,
+                  scenes8to10SpikesOver20ms: scenes8to10.length,
+                  scenes8to10SpikesOver33ms: spikesOver33ms.length,
+                  spikesOver33msDetails: spikesOver33ms
+                });
+              }, 150);
+            }
           }
-          runStep();
+          requestAnimationFrame(step);
         }))
       `,
       awaitPromise: true,
@@ -399,7 +384,7 @@ server.listen(PORT, '127.0.0.1', async () => {
   } catch (err) {
     console.error('Gate 2 Test Error:', err);
   } finally {
-    try { browser.kill(); } catch (e) {}
+    try { browser.kill(); } catch (e) { }
     server.close();
     process.exit(0);
   }

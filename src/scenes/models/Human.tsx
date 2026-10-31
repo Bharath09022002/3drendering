@@ -333,7 +333,7 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
       if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
         const mesh = child as THREE.SkinnedMesh;
         mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        mesh.receiveShadow = false;
         mesh.visible = true;
 
         // Clone geometry and material so each role instance has independent skin tones and wardrobe

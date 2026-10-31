@@ -4,6 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { scrollProgress, masterProgress, foldProgress, FOLD_START, FOLD_END, smootherstep } from '../scroll/progress';
 import { getCameraTransform, cameraDroneRoll } from './keyframes';
+import { isWarmupActive, warmupStationProgress } from '../scenes/World';
 
 const targetPos = new THREE.Vector3();
 const targetLookAt = new THREE.Vector3();
@@ -18,6 +19,17 @@ export function CameraRig() {
   const initialized = useRef(false);
 
   useFrame((_, dt) => {
+    if (isWarmupActive.current) {
+      const activeP = warmupStationProgress.current;
+      getCameraTransform(activeP, targetPos, targetLookAt);
+      camera.position.copy(targetPos);
+      camera.lookAt(targetLookAt);
+      camera.updateMatrixWorld();
+      smoothedPos.current.copy(targetPos);
+      smoothedLookAt.current.copy(targetLookAt);
+      return;
+    }
+
     const p = scrollProgress.current;
     const m = masterProgress.current;
     const f = foldProgress.current;
