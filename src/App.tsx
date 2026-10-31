@@ -1,9 +1,9 @@
 // src/App.tsx
 import React, { useEffect, useRef, useState, useCallback, Suspense } from 'react';
 import * as THREE from 'three';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { initLenis, destroyLenis } from './scroll/lenis';
-import { detectQualitySettings, QualityPreset, DEFAULT_QUALITY } from './config/quality';
+import { detectQualitySettings, QualityPreset, DEFAULT_QUALITY, subscribeQuality, stepDownToStandard, getQuality } from './config/quality';
 import { PerformanceMonitor } from '@react-three/drei';
 import { World } from './scenes/World';
 import { Loader } from './scenes/Loader';
@@ -17,11 +17,29 @@ const isDebug = typeof window !== 'undefined' && window.location.search.includes
 const DevLeva = isDebug ? React.lazy(() => import('./dev/DevLeva')) : null;
 const CanvasPerf = isDebug ? React.lazy(() => import('./dev/CanvasPerf')) : null;
 
+function QualityPerformanceWatcher() {
+  const lowFpsTimerRef = useRef(0);
+  useFrame((_, dt) => {
+    const fps = 1 / Math.max(0.001, dt);
+    const q = getQuality();
+    if (q.tierName === 'Ultra' && fps < 50) {
+      lowFpsTimerRef.current += dt;
+      if (lowFpsTimerRef.current >= 2.0) {
+        stepDownToStandard();
+        lowFpsTimerRef.current = 0;
+      }
+    } else {
+      lowFpsTimerRef.current = 0;
+    }
+  });
+  return null;
+}
+
 export function App() {
   const [, setLoaded] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [quality, setQuality] = useState<QualityPreset>(DEFAULT_QUALITY);
-  const [dpr, setDpr] = useState(1.75);
+  const [dpr, setDpr] = useState(2.0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Stable callback prevents Loader from restarting when setQuality triggers re-render
@@ -43,7 +61,11 @@ export function App() {
   useEffect(() => {
     detectQualitySettings().then((preset) => {
       setQuality(preset);
-      setDpr(preset.isMobile ? 1.25 : 1.75);
+      setDpr(preset.dprCap);
+    });
+    return subscribeQuality((preset) => {
+      setQuality(preset);
+      setDpr(preset.dprCap);
     });
   }, []);
 
@@ -106,13 +128,21 @@ export function App() {
             toneMappingExposure: 1.0,
             outputColorSpace: THREE.SRGBColorSpace
           }}
+          onCreated={({ gl }) => {
+            gl.shadowMap.type = THREE.PCFSoftShadowMap;
+            gl.shadowMap.enabled = true;
+          }}
           camera={{ fov: 38, near: 0.3, far: 300, position: [0, 0, 4.5] }}
           style={{ width: '100%', height: '100%' }}
         >
           <PerformanceMonitor
-            onDecline={() => setDpr((prev) => Math.max(1, prev - 0.25))}
+            onDecline={() => {
+              if (quality.tierName === 'Ultra') stepDownToStandard();
+              setDpr((prev) => Math.max(1, prev - 0.25));
+            }}
             onIncline={() => setDpr((prev) => Math.min(quality.dprCap, prev + 0.25))}
           />
+          <QualityPerformanceWatcher />
           {CanvasPerf && (
             <Suspense fallback={null}>
               <CanvasPerf />

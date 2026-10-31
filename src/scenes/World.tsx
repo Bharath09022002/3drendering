@@ -2,7 +2,7 @@
 import { Suspense, useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Environment, ContactShadows } from '@react-three/drei';
-import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
+import { EffectComposer, Bloom, N8AO, SMAA } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { CameraRig } from '../camera/CameraRig';
 import { getCameraTransform } from '../camera/keyframes';
@@ -38,13 +38,13 @@ function DynamicBloom() {
   const bloomRef = useRef<any>(null);
   useFrame(() => {
     const f = foldProgress.current;
-    let target = 0.75;
+    let target = 0.35;
     if (f >= 0.0 && f < 0.80) {
       target = 0.0;
     } else if (f >= 0.80 && f <= 1.00) {
-      target = 0.75 * ((f - 0.80) / 0.20);
+      target = 0.35 * ((f - 0.80) / 0.20);
     } else {
-      target = 0.75;
+      target = 0.35;
     }
     if (bloomRef.current) {
       bloomRef.current.intensity = target;
@@ -54,10 +54,10 @@ function DynamicBloom() {
   return (
     <Bloom
       ref={bloomRef}
-      luminanceThreshold={0.85}
-      luminanceSmoothing={0.3}
-      intensity={0.75}
-      radius={0.6}
+      luminanceThreshold={0.90}
+      luminanceSmoothing={0.15}
+      intensity={0.35}
+      radius={0.4}
       mipmapBlur
     />
   );
@@ -73,9 +73,60 @@ export function World() {
   const penetrationTimer = useRef(0);
 
   useEffect(() => {
-    // Precompile scene shaders on initial mount to eliminate shader hitches during scroll
+    // Precompile scene shaders on initial mount to eliminate shader hitches during scroll.
+    // Temporarily expose all hidden objects and layers so WebGL compiles every material upfront.
+    const hiddenObjects: THREE.Object3D[] = [];
+    scene.traverse((obj) => {
+      if (!obj.visible) {
+        hiddenObjects.push(obj);
+        obj.visible = true;
+      }
+    });
+
+    const originalLayers = camera.layers.mask;
+    camera.layers.enable(0);
+    camera.layers.enable(1);
+
     gl.compile(scene, camera);
-  }, [gl, scene, camera]);
+
+    camera.layers.mask = originalLayers;
+    hiddenObjects.forEach((obj) => {
+      obj.visible = false;
+    });
+
+    // Apply max anisotropy (min 16, max supported) and mipmaps to all textures
+    const maxAniso = Math.min(16, gl.capabilities.getMaxAnisotropy());
+    scene.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach((mat) => {
+          if (mat) {
+            ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap'].forEach((key) => {
+              const tex = (mat as any)[key] as THREE.Texture | undefined;
+              if (tex && tex.isTexture) {
+                tex.anisotropy = maxAniso;
+                tex.generateMipmaps = true;
+                tex.needsUpdate = true;
+              }
+            });
+          }
+        });
+      }
+    });
+
+    if (typeof window !== 'undefined') {
+      (window as any).__ULTRA_PIPELINE__ = {
+        tier: quality.tierName,
+        dpr: gl.getPixelRatio(),
+        multisampling: quality.multisampling,
+        shadowMapSize: quality.shadowMapSize,
+        anisotropy: maxAniso,
+        enableAO: quality.enableAO,
+        envIntensity: (scene as any).environmentIntensity ?? 1.0,
+      };
+    }
+  }, [gl, scene, camera, quality]);
 
   useEffect(() => {
     // Lights that affect the story get both Layer 0 and Layer 1
@@ -92,6 +143,15 @@ export function World() {
       (window as any).__THREE_DRAW_CALLS__ = gl.info.render.calls;
       (window as any).__THREE_TRIANGLES__ = gl.info.render.triangles;
       (window as any).__RENDERER_INFO__ = gl.info;
+
+      const pipeline = (window as any).__ULTRA_PIPELINE__;
+      if (pipeline) {
+        pipeline.tier = quality.tierName;
+        pipeline.dpr = gl.getPixelRatio();
+        pipeline.shadowMapSize = quality.shadowMapSize;
+        pipeline.multisampling = quality.multisampling;
+        pipeline.envIntensity = (scene as any).environmentIntensity ?? 1.0;
+      }
 
       if (window.location.search.includes('debug=1')) {
         penetrationTimer.current += dt;
@@ -162,11 +222,27 @@ export function World() {
       dirLightRef.current.target.updateMatrixWorld();
     }
 
+    // Dynamic environment HDR reflection intensity per scene
+    let targetEnv = 1.0;
+    if (p >= W.logoReveal.start) {
+      const t = Math.min(1, (p - W.logoReveal.start) / (W.logoReveal.end - W.logoReveal.start));
+      targetEnv = THREE.MathUtils.lerp(1.0, 0.35, t);
+    } else if (p >= W.bikeThroughCity.start) {
+      targetEnv = 1.15;
+    } else if (p >= W.packingParcel.start) {
+      targetEnv = 1.0;
+    } else {
+      targetEnv = 0.85;
+    }
+
     // Damped smoothing
     const k = 1 - Math.exp(-8 * Math.min(dt, 0.05));
     if (dirLightRef.current) dirLightRef.current.intensity = THREE.MathUtils.lerp(dirLightRef.current.intensity, targetDir, k);
     if (hemiLightRef.current) hemiLightRef.current.intensity = THREE.MathUtils.lerp(hemiLightRef.current.intensity, targetHemi, k);
     if (rimLightRef.current) rimLightRef.current.intensity = THREE.MathUtils.lerp(rimLightRef.current.intensity, targetRim, k);
+    if ((scene as any).environmentIntensity !== undefined) {
+      (scene as any).environmentIntensity = THREE.MathUtils.lerp((scene as any).environmentIntensity ?? 1.0, targetEnv, k);
+    }
   });
 
   return (
@@ -188,7 +264,7 @@ export function World() {
         position={[8, 14, 10]}
         intensity={1.25}
         castShadow={quality.shadows}
-        shadow-mapSize={quality.isMobile ? [1024, 1024] : [2048, 2048]}
+        shadow-mapSize={[quality.shadowMapSize, quality.shadowMapSize]}
         shadow-camera-near={0.5}
         shadow-camera-far={60}
         shadow-camera-left={-8}
@@ -253,11 +329,19 @@ export function World() {
       {/* Soft mint distance fog to hide city perimeter and limit draw distance */}
       <fog attach="fog" args={[PALETTE.bg, 45, 175]} />
 
-      {/* 8. Cinematic Post-Processing Pipeline (Desktop 4x MSAA, High-Precision Bloom & Vignette) */}
+      {/* 8. Ultra Definition Post-Processing Pipeline (4x MSAA, N8AO, Subtle Bloom, SMAA) */}
       {quality.enablePostProcessing && (
-        <EffectComposer multisampling={quality.isMobile ? 0 : 4}>
+        <EffectComposer multisampling={quality.multisampling}>
+          <N8AO
+            aoRadius={0.6}
+            distanceFalloff={2.0}
+            intensity={quality.enableAO ? 1.8 : 0}
+            quality={quality.tierName === 'Ultra' ? 'high' : 'medium'}
+            halfRes={quality.tierName !== 'Ultra'}
+            color="#020617"
+          />
           <DynamicBloom />
-          <Vignette eskil={false} offset={0.16} darkness={0.5} />
+          <SMAA />
         </EffectComposer>
       )}
     </>
