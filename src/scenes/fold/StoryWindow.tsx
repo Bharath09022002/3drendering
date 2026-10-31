@@ -72,7 +72,7 @@ export function StoryWindow() {
     };
   }, [fbo]);
 
-  const isDebug = typeof window !== 'undefined' && window.location.search.includes('fboQuad=1');
+  const isDebug = typeof window !== 'undefined' && window.location.search.includes('debug=1');
   const isFboDisabled = typeof window !== 'undefined' && window.location.search.includes('fbo=0');
   const smoothedRoll = useRef(0);
   const debugPlaneGroupRef = useRef<THREE.Group>(null);

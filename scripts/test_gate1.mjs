@@ -46,12 +46,11 @@ server.listen(PORT, '127.0.0.1', async () => {
   const edgePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
   const browserBin = fs.existsSync(chromePath) ? chromePath : edgePath;
 
-  const userDataDir = path.resolve(__dirname, `../.test-gate1-suite-profile-${Date.now()}`);
+  const userDataDir = path.resolve(__dirname, '../.test-gate1-suite-profile');
   if (fs.existsSync(userDataDir)) {
     try { fs.rmSync(userDataDir, { recursive: true, force: true }); } catch (e) {}
   }
 
-  const browserPort = 9275;
   const browser = spawn(browserBin, [
     '--headless=new',
     '--no-sandbox',
@@ -61,44 +60,20 @@ server.listen(PORT, '127.0.0.1', async () => {
     '--disable-background-timer-throttling',
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding',
-    `--remote-debugging-port=${browserPort}`,
-    '--remote-allow-origins=*',
+    '--remote-debugging-port=9260',
     `--user-data-dir=${userDataDir}`,
     'about:blank'
   ]);
 
-  let wsBrowserUrl = null;
-  browser.stderr?.on('data', d => {
-    const str = d.toString();
-    console.error('Browser stderr:', str);
-    const m = str.match(/DevTools listening on (ws:\/\/[^\s]+)/);
-    if (m) {
-      wsBrowserUrl = m[1];
-      console.log('Detected DevTools WebSocket URL:', wsBrowserUrl);
-    }
-  });
-  browser.on('exit', (code, signal) => console.log(`Browser process exited with code ${code}, signal ${signal}`));
-
   let listRes;
-  for (let retry = 0; retry < 40; retry++) {
-    await new Promise(r => setTimeout(r, 500));
+  for (let retry = 0; retry < 15; retry++) {
+    await new Promise(r => setTimeout(r, 600));
     try {
-      listRes = await fetch(`http://127.0.0.1:${browserPort}/json/list`);
-      if (listRes && listRes.ok) {
-        const text = await listRes.text();
-        const json = JSON.parse(text);
-        if (Array.isArray(json) && json.length > 0) {
-          listRes = { ok: true, json: async () => json };
-          break;
-        }
-      } else if (listRes) {
-        console.log('Fetch returned status:', listRes.status);
-      }
-    } catch (e) {
-      // connecting
-    }
+      listRes = await fetch('http://127.0.0.1:9260/json/list');
+      if (listRes.ok) break;
+    } catch (e) {}
   }
-  if (!listRes || !listRes.ok) throw new Error(`Could not connect to browser on port ${browserPort}`);
+  if (!listRes || !listRes.ok) throw new Error('Could not connect to browser on port 9260');
 
   try {
     const pages = await listRes.json();
