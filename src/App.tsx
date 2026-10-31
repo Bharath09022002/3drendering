@@ -11,6 +11,7 @@ import { Nav } from './overlay/Nav';
 import { Copy } from './overlay/Copy';
 import { DebugBar } from './dev/DebugBar';
 import { ReducedMotionFallback } from './overlay/ReducedMotionFallback';
+import { CanvasErrorBoundary } from './components/CanvasErrorBoundary';
 
 // Exclude heavy dev tooling (Leva, r3f-perf) unless ?debug=1 is in URL
 const isDebug = typeof window !== 'undefined' && window.location.search.includes('debug=1');
@@ -116,40 +117,57 @@ export function App() {
 
       {/* Sticky Fullscreen 3D WebGL Canvas */}
       <div className="fixed inset-0 z-0 pointer-events-none">
-        <Canvas
-          shadows
-          dpr={[1, dpr]}
-          gl={{
-            antialias: quality.isMobile,
-            powerPreference: 'high-performance',
-            stencil: false,
-            depth: true,
-            toneMapping: THREE.NeutralToneMapping,
-            toneMappingExposure: 1.0,
-            outputColorSpace: THREE.SRGBColorSpace
-          }}
-          onCreated={({ gl }) => {
-            gl.shadowMap.type = THREE.PCFSoftShadowMap;
-            gl.shadowMap.enabled = true;
-          }}
-          camera={{ fov: 38, near: 0.3, far: 300, position: [0, 0, 4.5] }}
-          style={{ width: '100%', height: '100%' }}
+        <CanvasErrorBoundary
+          fallback={
+            <div className="w-full h-full flex items-center justify-center text-xs text-ink/40">
+              3D interactive canvas failed to load
+            </div>
+          }
         >
-          <PerformanceMonitor
-            onDecline={() => {
-              if (quality.tierName === 'Ultra') stepDownToStandard();
-              setDpr((prev) => Math.max(1, prev - 0.25));
+          <Canvas
+            shadows
+            dpr={[1, dpr]}
+            gl={{
+              antialias: quality.isMobile,
+              powerPreference: 'high-performance',
+              stencil: false,
+              depth: true,
+              toneMapping: THREE.NeutralToneMapping,
+              toneMappingExposure: 1.0,
+              outputColorSpace: THREE.SRGBColorSpace
             }}
-            onIncline={() => setDpr((prev) => Math.min(quality.dprCap, prev + 0.25))}
-          />
-          <QualityPerformanceWatcher />
-          {CanvasPerf && (
-            <Suspense fallback={null}>
-              <CanvasPerf />
-            </Suspense>
-          )}
-          <World />
-        </Canvas>
+            onCreated={({ gl }) => {
+              gl.shadowMap.type = THREE.PCFSoftShadowMap;
+              gl.shadowMap.enabled = true;
+
+              gl.domElement.addEventListener('webglcontextlost', (event) => {
+                event.preventDefault();
+                console.error('[WebGL Context Lost]: Canvas WebGL context was lost.');
+              }, false);
+
+              gl.domElement.addEventListener('webglcontextrestored', () => {
+                console.info('[WebGL Context Restored]: Canvas WebGL context was restored.');
+              }, false);
+            }}
+            camera={{ fov: 38, near: 0.3, far: 300, position: [0, 0, 4.5] }}
+            style={{ width: '100%', height: '100%' }}
+          >
+            <PerformanceMonitor
+              onDecline={() => {
+                if (quality.tierName === 'Ultra') stepDownToStandard();
+                setDpr((prev) => Math.max(1, prev - 0.25));
+              }}
+              onIncline={() => setDpr((prev) => Math.min(quality.dprCap, prev + 0.25))}
+            />
+            <QualityPerformanceWatcher />
+            {CanvasPerf && (
+              <Suspense fallback={null}>
+                <CanvasPerf />
+              </Suspense>
+            )}
+            <World />
+          </Canvas>
+        </CanvasErrorBoundary>
       </div>
 
       {/* Pinned HTML Copy Overlays */}

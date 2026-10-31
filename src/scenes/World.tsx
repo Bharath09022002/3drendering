@@ -306,7 +306,7 @@ export function World() {
       targetEnv = THREE.MathUtils.lerp(1.0, 0.35, t);
     } else if (p >= W.bikeThroughCity.start) {
       targetEnv = 1.15;
-    } else if (p >= W.packingParcel.start) {
+    } else if (p >= W.retailerPacks.start) {
       targetEnv = 1.0;
     } else {
       targetEnv = 0.85;
