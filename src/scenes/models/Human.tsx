@@ -255,6 +255,7 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
   const lastDistanceRef = useRef(0);
   const stopTimerRef = useRef(0);
   const idleTimeRef = useRef(0);
+  const isRPMRef = useRef(false);
 
   // Cache bones and initialize mixer once per clone
   useEffect(() => {
@@ -284,23 +285,27 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
     const b: typeof bonesRef.current = {};
     const effectiveCoat = coatColor || roleConfig.paletteOverrides.coat || roleConfig.paletteOverrides.shirt;
     const effectivePants = pantsColor || roleConfig.paletteOverrides.trousers;
-    const isDesktop = typeof window !== 'undefined' ? window.innerWidth >= 768 : true;
+    const isRPM = clone.getObjectByName('Wolf3D_Head') !== undefined;
+    isRPMRef.current = isRPM;
+
+    const fingerBones: THREE.Bone[] = [];
 
     clone.traverse((child) => {
       if ((child as THREE.Bone).isBone) {
         const name = child.name;
-        if (name.includes('Hips')) b.hips = child as THREE.Bone;
-        else if (name.includes('Spine1')) b.spine = child as THREE.Bone;
-        else if (name.includes('Spine2')) b.chest = child as THREE.Bone;
-        else if (name.includes('Neck')) b.neck = child as THREE.Bone;
-        else if (name.includes('Head') && !name.includes('Top')) b.head = child as THREE.Bone;
-        else if (name.includes('LeftShoulder')) b.leftShoulder = child as THREE.Bone;
-        else if (name.includes('RightShoulder')) b.rightShoulder = child as THREE.Bone;
-        else if (name.includes('LeftArm') && !name.includes('Fore')) b.leftArm = child as THREE.Bone;
-        else if (name.includes('LeftForeArm')) b.leftForeArm = child as THREE.Bone;
+        if (name.includes('Hips') || name === 'Hips') b.hips = child as THREE.Bone;
+        else if (name.includes('Spine1') || name === 'Spine1') b.spine = child as THREE.Bone;
+        else if (name.includes('Spine2') || name === 'Spine2') b.chest = child as THREE.Bone;
+        else if (name.includes('Neck') || name === 'Neck') b.neck = child as THREE.Bone;
+        else if ((name.includes('Head') || name === 'Head') && !name.includes('Top')) b.head = child as THREE.Bone;
+        else if (name.includes('LeftShoulder') || name === 'LeftShoulder') b.leftShoulder = child as THREE.Bone;
+        else if (name.includes('RightShoulder') || name === 'RightShoulder') b.rightShoulder = child as THREE.Bone;
+        else if ((name.includes('LeftArm') || name === 'LeftArm') && !name.includes('Fore')) b.leftArm = child as THREE.Bone;
+        else if (name.includes('LeftForeArm') || name === 'LeftForeArm') b.leftForeArm = child as THREE.Bone;
         else if (
           name === 'mixamorigLeftHand' ||
           name === 'mixamorig:LeftHand' ||
+          name === 'LeftHand' ||
           (name.includes('LeftHand') &&
             !name.includes('Thumb') &&
             !name.includes('Index') &&
@@ -309,11 +314,12 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
             !name.includes('Pinky'))
         )
           b.leftHand = child as THREE.Bone;
-        else if (name.includes('RightArm') && !name.includes('Fore')) b.rightArm = child as THREE.Bone;
-        else if (name.includes('RightForeArm')) b.rightForeArm = child as THREE.Bone;
+        else if ((name.includes('RightArm') || name === 'RightArm') && !name.includes('Fore')) b.rightArm = child as THREE.Bone;
+        else if (name.includes('RightForeArm') || name === 'RightForeArm') b.rightForeArm = child as THREE.Bone;
         else if (
           name === 'mixamorigRightHand' ||
           name === 'mixamorig:RightHand' ||
+          name === 'RightHand' ||
           (name.includes('RightHand') &&
             !name.includes('Thumb') &&
             !name.includes('Index') &&
@@ -322,12 +328,16 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
             !name.includes('Pinky'))
         )
           b.rightHand = child as THREE.Bone;
-        else if (name.includes('LeftUpLeg')) b.leftUpLeg = child as THREE.Bone;
-        else if (name.includes('LeftLeg')) b.leftLeg = child as THREE.Bone;
-        else if (name.includes('LeftFoot')) b.leftFoot = child as THREE.Bone;
-        else if (name.includes('RightUpLeg')) b.rightUpLeg = child as THREE.Bone;
-        else if (name.includes('RightLeg')) b.rightLeg = child as THREE.Bone;
-        else if (name.includes('RightFoot')) b.rightFoot = child as THREE.Bone;
+        else if (name.includes('LeftUpLeg') || name === 'LeftUpLeg') b.leftUpLeg = child as THREE.Bone;
+        else if (name.includes('LeftLeg') || name === 'LeftLeg') b.leftLeg = child as THREE.Bone;
+        else if (name.includes('LeftFoot') || name === 'LeftFoot') b.leftFoot = child as THREE.Bone;
+        else if (name.includes('RightUpLeg') || name === 'RightUpLeg') b.rightUpLeg = child as THREE.Bone;
+        else if (name.includes('RightLeg') || name === 'RightLeg') b.rightLeg = child as THREE.Bone;
+        else if (name.includes('RightFoot') || name === 'RightFoot') b.rightFoot = child as THREE.Bone;
+
+        if (name.includes('Thumb') || name.includes('Index') || name.includes('Middle') || name.includes('Ring') || name.includes('Pinky')) {
+          fingerBones.push(child as THREE.Bone);
+        }
       }
 
       if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
@@ -336,41 +346,90 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
         mesh.receiveShadow = false;
         mesh.visible = true;
 
-        // Clone geometry and material so each role instance has independent skin tones and wardrobe
-        mesh.geometry = mesh.geometry.clone();
         mesh.material = (mesh.material as THREE.Material).clone();
+        const mat = mesh.material as THREE.MeshStandardMaterial;
 
-        // Apply realistic human skin tones and detailed clothing (applies to both Beta_Surface and anatomical Beta_Joints)
-        applyHumanSkinAndWardrobe(mesh, role, effectiveCoat, effectivePants);
-
-        // Desktop subtle outline for clean visual separation
-        if (isDesktop && !mesh.userData.hasOutline) {
-          mesh.userData.hasOutline = true;
-          const outlineMesh = mesh.clone();
-          outlineMesh.material = new THREE.MeshBasicMaterial({
-            color: '#0B1F1A',
-            side: THREE.BackSide,
-          });
-          outlineMesh.scale.multiplyScalar(1.012);
-          outlineMesh.castShadow = false;
-          outlineMesh.receiveShadow = false;
-          mesh.add(outlineMesh);
+        if (isRPM) {
+          // Ready Player Me photoreal / premium PBR assets: preserve authentic textures & normal maps
+          if (mesh.name === 'EyeLeft' || mesh.name === 'EyeRight') {
+            mat.roughness = 0.04;
+            mat.metalness = 0.05;
+            mat.envMapIntensity = 2.4;
+          } else if (mesh.name === 'Wolf3D_Head' || mesh.name === 'Wolf3D_Body') {
+            mat.roughness = 0.65;
+            mat.metalness = 0.02;
+            mat.envMapIntensity = 0.8;
+          } else if (mesh.name === 'Wolf3D_Outfit_Top') {
+            mat.roughness = 0.82;
+            mat.metalness = 0.02;
+            if (role === 'rider') {
+              mat.color.set(PALETTE.accent); // Coral delivery jacket
+            } else if (role === 'pharmacist') {
+              mat.color.set('#F8FAFC'); // Clean medical lab coat
+            } else {
+              mat.color.set('#2563EB'); // Royal blue casual sweater
+            }
+          } else if (mesh.name === 'Wolf3D_Outfit_Bottom') {
+            mat.roughness = 0.88;
+            mat.metalness = 0.02;
+            if (role === 'customer') {
+              mat.color.set('#334155'); // Indigo denim jeans
+            } else {
+              mat.color.set('#1E293B'); // Charcoal trousers
+            }
+          } else if (mesh.name === 'Wolf3D_Outfit_Footwear') {
+            mat.roughness = 0.70;
+            if (role === 'customer') {
+              mat.color.set('#F1F5F9'); // Clean white sneakers
+            } else {
+              mat.color.set('#0F172A'); // Clean black riding boots
+            }
+          } else if (mesh.name === 'Wolf3D_Headwear') {
+            if (hasHelmet || role === 'rider') {
+              mesh.visible = false; // Tucked inside full-face aerodynamic helmet
+            } else {
+              mesh.visible = true;
+              mat.roughness = 0.75;
+            }
+          } else if (mesh.name === 'Wolf3D_Beard') {
+            mesh.visible = false;
+          }
+        } else {
+          // Legacy mannequin fallback
+          mesh.geometry = mesh.geometry.clone();
+          applyHumanSkinAndWardrobe(mesh, role, effectiveCoat, effectivePants);
         }
       }
     });
 
     bonesRef.current = b;
 
+    // Relax and curl finger joints naturally (eliminates stiff paddle hands)
+    if (fingerBones.length > 0) {
+      for (const fb of fingerBones) {
+        if (!fb.name.includes('Thumb')) {
+          fb.rotation.x = 0.32; // Natural resting curvature
+        } else {
+          fb.rotation.y = 0.15;
+        }
+      }
+    }
+
     // =========================================================================
     // 3D ACCESSORIES PARENTED RIGIDLY TO BONES (Follows all skeletal animations)
     // =========================================================================
+    const accScale = isRPM ? 1.0 : 100.0;
 
     // 1. Pharmacist Accessories (Stethoscope & Hospital ID Badge on chest)
     let pharmacistAccessories: THREE.Group | null = null;
     if (b.chest && role === 'pharmacist') {
       pharmacistAccessories = new THREE.Group();
-      pharmacistAccessories.position.set(0, 14.5, 3.2);
-      pharmacistAccessories.scale.set(100, 100, 100);
+      if (isRPM) {
+        pharmacistAccessories.position.set(0, 0.145, 0.032);
+      } else {
+        pharmacistAccessories.position.set(0, 14.5, 3.2);
+      }
+      pharmacistAccessories.scale.set(accScale, accScale, accScale);
 
       // Binaural tubes draped around neck
       const tubingMat = new THREE.MeshStandardMaterial({ color: 0x064E3B, roughness: 0.35 });
@@ -406,40 +465,69 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
       b.chest.add(pharmacistAccessories);
     }
 
-    // 2. Courier Rider Accessories (Helmet on head & Crossbody sling on chest)
+    // 2. Aerodynamic Full-Face Courier Rider Helmet & Crossbody Sling
     let helmetGroup: THREE.Group | null = null;
     let courierSling: THREE.Group | null = null;
     if (b.head && (hasHelmet || role === 'rider' || roleConfig.paletteOverrides.hasHelmet)) {
       helmetGroup = new THREE.Group();
       helmetGroup.name = 'rider-helmet-rig';
-      helmetGroup.position.set(0, 8.9, 1.3);
-      helmetGroup.scale.set(100, 100, 100);
+      if (isRPM) {
+        helmetGroup.position.set(0, 0.082, 0.018);
+      } else {
+        helmetGroup.position.set(0, 8.9, 1.3);
+      }
+      helmetGroup.scale.set(accScale, accScale, accScale);
 
-      // Aerodynamic shell
+      // Aerodynamic full-face helmet shell with automotive clearcoat
+      const shellGeo = new THREE.SphereGeometry(0.158, 32, 24);
+      shellGeo.scale(0.96, 1.05, 1.14);
       const shellMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(0.165, 32, 24),
-        new THREE.MeshStandardMaterial({ color: 0x0F172A, roughness: 0.18, metalness: 0.85 })
+        shellGeo,
+        new THREE.MeshPhysicalMaterial({
+          color: 0x0F172A,
+          roughness: 0.18,
+          metalness: 0.15,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.06,
+        })
       );
       shellMesh.castShadow = true;
       helmetGroup.add(shellMesh);
 
-      // Visor with dark glass reflection
+      // Smoked Iridium Visor with high environment sky reflection
+      const visorGeo = new THREE.CylinderGeometry(0.144, 0.144, 0.095, 24, 1, false, -Math.PI / 3.1, (Math.PI * 2) / 3.1);
       const visorMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.145, 0.145, 0.10, 24, 1, false, -Math.PI / 3, (Math.PI * 2) / 3),
-        new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.05, metalness: 0.95 })
+        visorGeo,
+        new THREE.MeshPhysicalMaterial({
+          color: 0x020617,
+          roughness: 0.04,
+          metalness: 0.20,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.02,
+          envMapIntensity: 2.5,
+        })
       );
-      visorMesh.position.set(0, 0.02, 0.11);
+      visorMesh.position.set(0, 0.02, 0.095);
       visorMesh.rotation.set(0.1, 0, 0);
       helmetGroup.add(visorMesh);
 
-      // Chin guard
+      // Chin guard & mouth intake vent
+      const chinGeo = new THREE.CylinderGeometry(0.154, 0.148, 0.065, 24, 1, false, -Math.PI / 3.4, (Math.PI * 2) / 3.4);
       const chinMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.155, 0.150, 0.06, 24, 1, false, -Math.PI / 3.5, (Math.PI * 2) / 3.5),
-        new THREE.MeshStandardMaterial({ color: 0x0A0F1D, roughness: 0.25, metalness: 0.8 })
+        chinGeo,
+        new THREE.MeshStandardMaterial({ color: 0x1E293B, roughness: 0.45, metalness: 0.3 })
       );
-      chinMesh.position.set(0, -0.06, 0.08);
+      chinMesh.position.set(0, -0.058, 0.075);
       chinMesh.rotation.set(-0.15, 0, 0);
       helmetGroup.add(chinMesh);
+
+      // Chin intake vent slots
+      const ventMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.045, 0.012, 0.02),
+        new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.85 })
+      );
+      ventMesh.position.set(0, -0.052, 0.145);
+      helmetGroup.add(ventMesh);
 
       // Chin strap
       const strapMesh = new THREE.Mesh(
@@ -450,13 +538,13 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
       strapMesh.rotation.set(Math.PI / 2, 0, 0);
       helmetGroup.add(strapMesh);
 
-      // Coral racing stripe
+      // High-vis coral racing stripe
       const stripeMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(0.024, 0.14, 0.14),
-        new THREE.MeshStandardMaterial({ color: PALETTE.accent, roughness: 0.3 })
+        new THREE.BoxGeometry(0.024, 0.14, 0.15),
+        new THREE.MeshStandardMaterial({ color: PALETTE.accent, roughness: 0.25 })
       );
-      stripeMesh.position.set(0, 0.08, 0.04);
-      stripeMesh.rotation.set(0.4, 0, 0);
+      stripeMesh.position.set(0, 0.075, 0.035);
+      stripeMesh.rotation.set(0.35, 0, 0);
       helmetGroup.add(stripeMesh);
 
       b.head.add(helmetGroup);
@@ -464,8 +552,12 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
 
     if (b.chest && role === 'rider') {
       courierSling = new THREE.Group();
-      courierSling.position.set(0, 13.0, 2.5);
-      courierSling.scale.set(100, 100, 100);
+      if (isRPM) {
+        courierSling.position.set(0, 0.13, 0.025);
+      } else {
+        courierSling.position.set(0, 13.0, 2.5);
+      }
+      courierSling.scale.set(accScale, accScale, accScale);
 
       // Diagonal cross-body messenger strap across chest
       const strap = new THREE.Mesh(
@@ -487,15 +579,15 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
       b.chest.add(courierSling);
     }
 
-    // 3. Customer Accessories (Natural sculpted hair volume & leather wristwatch)
+    // 3. Customer Accessories (Natural styled hair and leather wristwatch)
     let customerHair: THREE.Group | null = null;
     let customerWatch: THREE.Group | null = null;
-    if (b.head && role === 'customer') {
+    if (b.head && role === 'customer' && !isRPM) {
+      // Legacy hair cap only for mannequin
       customerHair = new THREE.Group();
       customerHair.position.set(0, 7.8, 0.5);
       customerHair.scale.set(100, 100, 100);
 
-      // Organic hair volume framing head
       const hairMat = new THREE.MeshStandardMaterial({ color: 0x1F1A18, roughness: 0.85 });
       const hairTop = new THREE.Mesh(new THREE.SphereGeometry(0.128, 24, 16), hairMat);
       hairTop.position.set(0, 0.05, -0.01);
@@ -508,7 +600,7 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
       b.head.add(customerHair);
     }
 
-    if (b.leftForeArm && role === 'customer') {
+    if (b.leftForeArm && role === 'customer' && !isRPM) {
       customerWatch = new THREE.Group();
       customerWatch.position.set(0, 18.5, 0);
       customerWatch.scale.set(100, 100, 100);
@@ -526,198 +618,170 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
     }
 
     // =========================================================================
-    // 3. TAILORED WARDROBE LAYERS: WAISTBAND & BELT, SHIRT HEM, COLLAR, CUFFS
-    // Physical clothing meshes bridging all joint seams (ZERO empty gaps)
+    // 3. TAILORED WARDROBE LAYERS FOR LEGACY MANNEQUIN (Bridging joint seams)
+    // Physical clothing meshes bridging all joint seams only needed for Y-Bot
     // =========================================================================
-
-    // A. Tailored Waistband & Belt with Buckle on b.hips (Anatomical Elliptical Profile)
     let waistGroup: THREE.Group | null = null;
-    if (b.hips) {
-      waistGroup = new THREE.Group();
-      waistGroup.name = 'human-waist-wardrobe';
-      waistGroup.position.set(0, 0, 0);
-      waistGroup.scale.set(102, 100, 78); // Elliptical contour matching natural human waist
-
-      const beltColor = role === 'rider' ? 0x111827 : 0x1E293B;
-      const beltMat = new THREE.MeshStandardMaterial({
-        color: beltColor,
-        roughness: 0.65,
-        metalness: 0.15,
-      });
-
-      // 1. Sleek Anatomical Waistband (Seamlessly bridges upper torso and pelvis, ZERO gaps)
-      const waistbandMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.165, 0.165, 0.045, 32),
-        beltMat
-      );
-      waistbandMesh.castShadow = true;
-      waistGroup.add(waistbandMesh);
-
-      // 2. Leather Belt Strap with fine edge
-      const beltStrap = new THREE.Mesh(
-        new THREE.TorusGeometry(0.166, 0.014, 16, 32),
-        beltMat
-      );
-      beltStrap.rotation.x = Math.PI / 2;
-      beltStrap.castShadow = true;
-      waistGroup.add(beltStrap);
-
-      // 3. Metallic Belt Buckle (Front center)
-      const buckleMat = new THREE.MeshStandardMaterial({
-        color: 0xCBD5E1,
-        metalness: 0.95,
-        roughness: 0.15,
-      });
-      const buckleFrame = new THREE.Mesh(
-        new THREE.BoxGeometry(0.048, 0.034, 0.012),
-        buckleMat
-      );
-      buckleFrame.position.set(0, 0, 0.168);
-      buckleFrame.castShadow = true;
-      waistGroup.add(buckleFrame);
-
-      const buckleProng = new THREE.Mesh(
-        new THREE.BoxGeometry(0.008, 0.026, 0.014),
-        new THREE.MeshStandardMaterial({ color: 0x0F172A, metalness: 0.9, roughness: 0.2 })
-      );
-      buckleProng.position.set(0, 0, 0.169);
-      waistGroup.add(buckleProng);
-
-      // Belt loops on left & right sides
-      [-0.12, 0.12].forEach((lx) => {
-        const loop = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.045, 0.010), beltMat);
-        loop.position.set(lx, 0, 0.162);
-        waistGroup!.add(loop);
-      });
-
-      b.hips.add(waistGroup);
-    }
-
-    // B. Tailored Shirt / Jacket Hem on b.spine (Sleek drape over waistband)
     let shirtHemGroup: THREE.Group | null = null;
-    if (b.spine) {
-      shirtHemGroup = new THREE.Group();
-      shirtHemGroup.name = 'human-shirt-hem-wardrobe';
-      shirtHemGroup.position.set(0, -1.2, 0);
-      shirtHemGroup.scale.set(103, 100, 79); // Matches torso ellipse closely
-
-      const shirtMat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(effectiveCoat),
-        roughness: 0.55,
-        metalness: 0.08,
-      });
-
-      // Tailored shirt / jacket hem overlapping top of trousers
-      const hemMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.166, 0.174, 0.048, 32, 1, true),
-        shirtMat
-      );
-      hemMesh.castShadow = true;
-      shirtHemGroup.add(hemMesh);
-
-      // Fine edge trim piping
-      const pipingMat = new THREE.MeshStandardMaterial({
-        color: role === 'rider' ? 0x0F172A : new THREE.Color(effectiveCoat).multiplyScalar(0.75),
-        roughness: 0.6,
-        metalness: 0.1,
-      });
-      const hemPiping = new THREE.Mesh(
-        new THREE.TorusGeometry(0.174, 0.007, 12, 32),
-        pipingMat
-      );
-      hemPiping.rotation.x = Math.PI / 2;
-      hemPiping.position.set(0, -0.024, 0);
-      shirtHemGroup.add(hemPiping);
-
-      b.spine.add(shirtHemGroup);
-    }
-
-    // C. Shirt / Jacket Collar on b.neck
     let collarGroup: THREE.Group | null = null;
-    if (b.neck) {
-      collarGroup = new THREE.Group();
-      collarGroup.name = 'human-collar-wardrobe';
-      collarGroup.position.set(0, -4.0, 0);
-      collarGroup.scale.set(100, 100, 100);
-
-      const collarMat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(effectiveCoat),
-        roughness: 0.55,
-        metalness: 0.08,
-      });
-
-      const collarMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.095, 0.115, 0.07, 24, 1, true),
-        collarMat
-      );
-      collarMesh.castShadow = true;
-      collarGroup.add(collarMesh);
-
-      b.neck.add(collarGroup);
-    }
-
-    // D. Trouser Ankle Cuffs on b.leftLeg and b.rightLeg
     let leftCuff: THREE.Mesh | null = null;
     let rightCuff: THREE.Mesh | null = null;
-    const pantsCuffMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(effectivePants),
-      roughness: 0.65,
-      metalness: 0.05,
-    });
-
-    if (b.leftLeg) {
-      leftCuff = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.058, 0.064, 0.04, 20),
-        pantsCuffMat
-      );
-      leftCuff.position.set(0, -40, 0);
-      leftCuff.scale.set(100, 100, 100);
-      leftCuff.castShadow = true;
-      b.leftLeg.add(leftCuff);
-    }
-
-    if (b.rightLeg) {
-      rightCuff = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.058, 0.064, 0.04, 20),
-        pantsCuffMat
-      );
-      rightCuff.position.set(0, -40, 0);
-      rightCuff.scale.set(100, 100, 100);
-      rightCuff.castShadow = true;
-      b.rightLeg.add(rightCuff);
-    }
-
-    // E. Shirt / Jacket Sleeve Cuffs on forearms
     let leftSleeveCuff: THREE.Mesh | null = null;
     let rightSleeveCuff: THREE.Mesh | null = null;
-    const sleeveCuffMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(effectiveCoat),
-      roughness: 0.55,
-      metalness: 0.08,
-    });
 
-    if (b.leftForeArm) {
-      leftSleeveCuff = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.042, 0.045, 0.035, 20),
-        sleeveCuffMat
-      );
-      leftSleeveCuff.rotation.z = Math.PI / 2;
-      leftSleeveCuff.position.set(25, 0, 0);
-      leftSleeveCuff.scale.set(100, 100, 100);
-      leftSleeveCuff.castShadow = true;
-      b.leftForeArm.add(leftSleeveCuff);
-    }
+    if (!isRPM) {
+      if (b.hips) {
+        waistGroup = new THREE.Group();
+        waistGroup.name = 'human-waist-wardrobe';
+        waistGroup.position.set(0, 0, 0);
+        waistGroup.scale.set(102, 100, 78);
 
-    if (b.rightForeArm) {
-      rightSleeveCuff = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.042, 0.045, 0.035, 20),
-        sleeveCuffMat
-      );
-      rightSleeveCuff.rotation.z = Math.PI / 2;
-      rightSleeveCuff.position.set(-25, 0, 0);
-      rightSleeveCuff.scale.set(100, 100, 100);
-      rightSleeveCuff.castShadow = true;
-      b.rightForeArm.add(rightSleeveCuff);
+        const beltColor = role === 'rider' ? 0x111827 : 0x1E293B;
+        const beltMat = new THREE.MeshStandardMaterial({
+          color: beltColor,
+          roughness: 0.65,
+          metalness: 0.15,
+        });
+
+        const waistbandMesh = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.165, 0.165, 0.045, 32),
+          beltMat
+        );
+        waistbandMesh.castShadow = true;
+        waistGroup.add(waistbandMesh);
+
+        const beltStrap = new THREE.Mesh(
+          new THREE.TorusGeometry(0.166, 0.014, 16, 32),
+          beltMat
+        );
+        beltStrap.rotation.x = Math.PI / 2;
+        beltStrap.castShadow = true;
+        waistGroup.add(beltStrap);
+
+        const buckleMat = new THREE.MeshStandardMaterial({
+          color: 0xCBD5E1,
+          metalness: 0.95,
+          roughness: 0.15,
+        });
+        const buckleFrame = new THREE.Mesh(
+          new THREE.BoxGeometry(0.048, 0.034, 0.012),
+          buckleMat
+        );
+        buckleFrame.position.set(0, 0, 0.168);
+        buckleFrame.castShadow = true;
+        waistGroup.add(buckleFrame);
+
+        const buckleProng = new THREE.Mesh(
+          new THREE.BoxGeometry(0.008, 0.026, 0.014),
+          new THREE.MeshStandardMaterial({ color: 0x0F172A, metalness: 0.9, roughness: 0.2 })
+        );
+        buckleProng.position.set(0, 0, 0.169);
+        waistGroup.add(buckleProng);
+
+        b.hips.add(waistGroup);
+      }
+
+      if (b.spine) {
+        shirtHemGroup = new THREE.Group();
+        shirtHemGroup.name = 'human-shirt-hem-wardrobe';
+        shirtHemGroup.position.set(0, -1.2, 0);
+        shirtHemGroup.scale.set(103, 100, 79);
+
+        const shirtMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(effectiveCoat),
+          roughness: 0.55,
+          metalness: 0.08,
+        });
+
+        const hemMesh = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.166, 0.174, 0.048, 32, 1, true),
+          shirtMat
+        );
+        hemMesh.castShadow = true;
+        shirtHemGroup.add(hemMesh);
+
+        b.spine.add(shirtHemGroup);
+      }
+
+      if (b.neck) {
+        collarGroup = new THREE.Group();
+        collarGroup.name = 'human-collar-wardrobe';
+        collarGroup.position.set(0, -4.0, 0);
+        collarGroup.scale.set(100, 100, 100);
+
+        const collarMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(effectiveCoat),
+          roughness: 0.55,
+          metalness: 0.08,
+        });
+
+        const collarMesh = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.095, 0.115, 0.07, 24, 1, true),
+          collarMat
+        );
+        collarMesh.castShadow = true;
+        collarGroup.add(collarMesh);
+
+        b.neck.add(collarGroup);
+      }
+
+      const pantsCuffMat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(effectivePants),
+        roughness: 0.65,
+        metalness: 0.05,
+      });
+
+      if (b.leftLeg) {
+        leftCuff = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.058, 0.064, 0.04, 20),
+          pantsCuffMat
+        );
+        leftCuff.position.set(0, -40, 0);
+        leftCuff.scale.set(100, 100, 100);
+        leftCuff.castShadow = true;
+        b.leftLeg.add(leftCuff);
+      }
+
+      if (b.rightLeg) {
+        rightCuff = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.058, 0.064, 0.04, 20),
+          pantsCuffMat
+        );
+        rightCuff.position.set(0, -40, 0);
+        rightCuff.scale.set(100, 100, 100);
+        rightCuff.castShadow = true;
+        b.rightLeg.add(rightCuff);
+      }
+
+      const sleeveCuffMat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(effectiveCoat),
+        roughness: 0.55,
+        metalness: 0.08,
+      });
+
+      if (b.leftForeArm) {
+        leftSleeveCuff = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.042, 0.045, 0.035, 20),
+          sleeveCuffMat
+        );
+        leftSleeveCuff.rotation.z = Math.PI / 2;
+        leftSleeveCuff.position.set(25, 0, 0);
+        leftSleeveCuff.scale.set(100, 100, 100);
+        leftSleeveCuff.castShadow = true;
+        b.leftForeArm.add(leftSleeveCuff);
+      }
+
+      if (b.rightForeArm) {
+        rightSleeveCuff = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.042, 0.045, 0.035, 20),
+          sleeveCuffMat
+        );
+        rightSleeveCuff.rotation.z = Math.PI / 2;
+        rightSleeveCuff.position.set(-25, 0, 0);
+        rightSleeveCuff.scale.set(100, 100, 100);
+        rightSleeveCuff.castShadow = true;
+        b.rightForeArm.add(rightSleeveCuff);
+      }
     }
 
     return () => {
@@ -765,6 +829,7 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
     const p = currentPoseRef.current;
     const b = bonesRef.current;
     const safeDt = Math.min(dt, 0.05);
+    const isRPM = isRPMRef.current;
 
     // 1. Damped Walk Weight & Idle Blend: k = 1 - exp(-12 * min(dt, 0.05))
     const kBlend = 1 - Math.exp(-12 * safeDt);
@@ -812,25 +877,36 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
       if (b.neck) b.neck.rotation.x = 0.08;
       if (b.head) b.head.rotation.x = 0.18 + (p.headLook ?? 0);
 
-      // Thighs: Seated on saddle, thighs extending forward to footboard
-      if (b.leftUpLeg) b.leftUpLeg.rotation.set(-1.95, 0.22, 0.26);
-      if (b.rightUpLeg) b.rightUpLeg.rotation.set(-1.95, -0.22, -0.26);
+      if (isRPM) {
+        // Ready Player Me bone space seated posture
+        if (b.leftUpLeg) b.leftUpLeg.rotation.set(-1.52, 0.12, 0.16);
+        if (b.rightUpLeg) b.rightUpLeg.rotation.set(-1.52, -0.12, -0.16);
+        if (b.leftLeg) b.leftLeg.rotation.set(1.68, 0, 0);
+        if (b.rightLeg) b.rightLeg.rotation.set(1.68, 0, 0);
+        if (b.leftFoot) b.leftFoot.rotation.set(-0.35, 0, 0);
+        if (b.rightFoot) b.rightFoot.rotation.set(-0.35, 0, 0);
 
-      // Shins: Bend down to footboard
-      if (b.leftLeg) b.leftLeg.rotation.set(2.26, 0, 0);
-      if (b.rightLeg) b.rightLeg.rotation.set(2.26, 0, 0);
+        if (b.leftArm) b.leftArm.rotation.set(0.68, 0.14, -0.10);
+        if (b.rightArm) b.rightArm.rotation.set(0.68, -0.14, 0.10);
+        if (b.leftForeArm) b.leftForeArm.rotation.set(0.35, 0, -0.22);
+        if (b.rightForeArm) b.rightForeArm.rotation.set(0.35, 0, 0.22);
+      } else {
+        // Legacy mannequin seated posture
+        if (b.leftUpLeg) b.leftUpLeg.rotation.set(-1.95, 0.22, 0.26);
+        if (b.rightUpLeg) b.rightUpLeg.rotation.set(-1.95, -0.22, -0.26);
+        if (b.leftLeg) b.leftLeg.rotation.set(2.26, 0, 0);
+        if (b.rightLeg) b.rightLeg.rotation.set(2.26, 0, 0);
+        if (b.leftFoot) b.leftFoot.rotation.set(-0.64, 0, 0);
+        if (b.rightFoot) b.rightFoot.rotation.set(-0.64, 0, 0);
 
-      // Feet: Rest firmly planted on the scooter footboard traction ribs
-      if (b.leftFoot) b.leftFoot.rotation.set(-0.64, 0, 0);
-      if (b.rightFoot) b.rightFoot.rotation.set(-0.64, 0, 0);
+        if (b.leftShoulder) b.leftShoulder.rotation.set(-0.15, 0.10, 0);
+        if (b.rightShoulder) b.rightShoulder.rotation.set(-0.15, -0.10, 0);
+        if (b.leftArm) b.leftArm.rotation.set(-1.04, -0.80, -1.40);
+        if (b.rightArm) b.rightArm.rotation.set(-1.04, 0.80, 1.40);
+        if (b.leftForeArm) b.leftForeArm.rotation.set(-0.60, 0, 0);
+        if (b.rightForeArm) b.rightForeArm.rotation.set(-0.60, 0, 0);
+      }
 
-      // Arms & Hands: Firmly gripping the scooter handlebars at (+-0.31, 1.24, 0.32)
-      if (b.leftShoulder) b.leftShoulder.rotation.set(-0.15, 0.10, 0);
-      if (b.rightShoulder) b.rightShoulder.rotation.set(-0.15, -0.10, 0);
-      if (b.leftArm) b.leftArm.rotation.set(-1.04, -0.80, -1.40);
-      if (b.rightArm) b.rightArm.rotation.set(-1.04, 0.80, 1.40);
-      if (b.leftForeArm) b.leftForeArm.rotation.set(-0.60, 0, 0);
-      if (b.rightForeArm) b.rightForeArm.rotation.set(-0.60, 0, 0);
       if (b.leftHand) b.leftHand.rotation.set(0.25, 0.15, 0.20);
       if (b.rightHand) b.rightHand.rotation.set(0.25, -0.15, -0.20);
 
@@ -850,33 +926,73 @@ export const Human = forwardRef<HumanRef, HumanProps>(function Human(
         b.spine.rotation.x = p.lean;
       }
 
-      // Reaching forward to carry/hand over parcel (arms naturally lift from sides)
-      if (p.reachAmount && p.reachAmount > 0) {
-        const amt = Math.min(1, Math.max(0, p.reachAmount));
-        const armX = THREE.MathUtils.lerp(0, -0.42, amt);
-        const armY = THREE.MathUtils.lerp(0, -0.20, amt);
-        const armZ = THREE.MathUtils.lerp(-1.28, -0.95, amt);
-        if (b.leftArm) b.leftArm.rotation.set(armX, armY, armZ);
-        if (b.rightArm) b.rightArm.rotation.set(armX, -armY, -armZ);
+      if (isRPM) {
+        // Natural resting arms down by sides in RPM bone space
+        const walkCycle = (p.distanceWalked ?? 0) * 3.8;
+        const walkSwing = p.isWalking ? Math.sin(walkCycle) * 0.32 : 0;
 
-        const foreX = THREE.MathUtils.lerp(0, -0.65, amt);
-        const foreY = THREE.MathUtils.lerp(0, 0.40, amt);
-        const foreZ = THREE.MathUtils.lerp(-0.12, -0.35, amt);
-        if (b.leftForeArm) b.leftForeArm.rotation.set(foreX, foreY, foreZ);
-        if (b.rightForeArm) b.rightForeArm.rotation.set(foreX, -foreY, -foreZ);
-      } else if (!p.isWalking) {
-        // Natural resting arms down by sides when idle standing (no T-pose)
-        if (b.leftArm) b.leftArm.rotation.set(0, 0, -1.28);
-        if (b.rightArm) b.rightArm.rotation.set(0, 0, 1.28);
-        if (b.leftForeArm) b.leftForeArm.rotation.set(0, 0, -0.12);
-        if (b.rightForeArm) b.rightForeArm.rotation.set(0, 0, 0.12);
+        if (p.reachAmount && p.reachAmount > 0) {
+          const amt = Math.min(1, Math.max(0, p.reachAmount));
+          // Arms lift forward and in to hold and present parcel
+          if (b.leftArm) b.leftArm.rotation.set(0.998 - 0.52 * amt, 0.10 * amt, -0.144 - 0.22 * amt);
+          if (b.rightArm) b.rightArm.rotation.set(0.998 - 0.52 * amt, -0.10 * amt, 0.144 + 0.22 * amt);
+          if (b.leftForeArm) b.leftForeArm.rotation.set(0, 0, -0.58 * amt);
+          if (b.rightForeArm) b.rightForeArm.rotation.set(0, 0, 0.58 * amt);
+        } else {
+          // Standing relaxed with organic natural posture
+          if (b.leftArm) b.leftArm.rotation.set(0.998 + walkSwing, 0.019, -0.144);
+          if (b.rightArm) b.rightArm.rotation.set(0.998 - walkSwing, -0.019, 0.144);
+          if (b.leftForeArm) b.leftForeArm.rotation.set(0, 0, p.isWalking ? -Math.abs(walkSwing) * 0.2 : 0);
+          if (b.rightForeArm) b.rightForeArm.rotation.set(0, 0, p.isWalking ? Math.abs(walkSwing) * 0.2 : 0);
+        }
+
+        // Leg stride walking in RPM space
+        if (p.isWalking) {
+          const legSwing = Math.sin(walkCycle) * 0.42;
+          if (b.leftUpLeg) b.leftUpLeg.rotation.set(legSwing, 0.05, 0.05);
+          if (b.rightUpLeg) b.rightUpLeg.rotation.set(-legSwing, -0.05, -0.05);
+          if (b.leftLeg) b.leftLeg.rotation.set(Math.max(0, -legSwing) * 0.8, 0, 0);
+          if (b.rightLeg) b.rightLeg.rotation.set(Math.max(0, legSwing) * 0.8, 0, 0);
+        } else {
+          if (b.leftUpLeg) b.leftUpLeg.rotation.set(0, 0.05, 0.05);
+          if (b.rightUpLeg) b.rightUpLeg.rotation.set(0, -0.05, -0.05);
+          if (b.leftLeg) b.leftLeg.rotation.set(0, 0, 0);
+          if (b.rightLeg) b.rightLeg.rotation.set(0, 0, 0);
+        }
+      } else {
+        // Reaching forward to carry/hand over parcel (arms naturally lift from sides)
+        if (p.reachAmount && p.reachAmount > 0) {
+          const amt = Math.min(1, Math.max(0, p.reachAmount));
+          const armX = THREE.MathUtils.lerp(0, -0.42, amt);
+          const armY = THREE.MathUtils.lerp(0, -0.20, amt);
+          const armZ = THREE.MathUtils.lerp(-1.28, -0.95, amt);
+          if (b.leftArm) b.leftArm.rotation.set(armX, armY, armZ);
+          if (b.rightArm) b.rightArm.rotation.set(armX, -armY, -armZ);
+
+          const foreX = THREE.MathUtils.lerp(0, -0.65, amt);
+          const foreY = THREE.MathUtils.lerp(0, 0.40, amt);
+          const foreZ = THREE.MathUtils.lerp(-0.12, -0.35, amt);
+          if (b.leftForeArm) b.leftForeArm.rotation.set(foreX, foreY, foreZ);
+          if (b.rightForeArm) b.rightForeArm.rotation.set(foreX, -foreY, -foreZ);
+        } else if (!p.isWalking) {
+          // Natural resting arms down by sides when idle standing (no T-pose)
+          if (b.leftArm) b.leftArm.rotation.set(0, 0, -1.28);
+          if (b.rightArm) b.rightArm.rotation.set(0, 0, 1.28);
+          if (b.leftForeArm) b.leftForeArm.rotation.set(0, 0, -0.12);
+          if (b.rightForeArm) b.rightForeArm.rotation.set(0, 0, 0.12);
+        }
       }
 
       // Friendly wave gesture
       if (p.wave && p.wave > 0 && b.rightArm && b.rightForeArm) {
         const w = p.wave;
-        b.rightArm.rotation.set(-0.3, 0.2, 1.1 - 1.8 * w);
-        b.rightForeArm.rotation.set(0, 0, 0.8 * w);
+        if (isRPM) {
+          b.rightArm.rotation.set(0.1, -0.2, 0.6 + 0.8 * w);
+          b.rightForeArm.rotation.set(0, 0, 0.9 * w);
+        } else {
+          b.rightArm.rotation.set(-0.3, 0.2, 1.1 - 1.8 * w);
+          b.rightForeArm.rotation.set(0, 0, 0.8 * w);
+        }
       }
     }
 

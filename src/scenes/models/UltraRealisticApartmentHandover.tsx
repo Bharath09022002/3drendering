@@ -65,14 +65,9 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
     // Porch handover location in front of customer: [-0.15, 0, -0.30]
     // Customer doorstep location: [0.55, 0, -0.30]
 
-    isCourierVisibleRef.current = true;
-    if (courierGroupRef.current) {
-      courierGroupRef.current.visible = true;
-    }
-
     if (localP < 0.30) {
       // -----------------------------------------------------------------------
-      // Phase 1: Courier walks up walkway towards customer, directly facing them
+      // Phase 1: Courier walks up walkway towards customer in three-quarter view
       // -----------------------------------------------------------------------
       const walkT = seg(localP, 0.0, 0.30);
       const courierX = THREE.MathUtils.lerp(-0.85, -0.15, walkT);
@@ -81,8 +76,8 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
 
       if (courierGroupRef.current) {
         courierGroupRef.current.position.set(courierX, 0, courierZ);
-        // Directly facing customer (+X direction = 1.57 rad)
-        courierGroupRef.current.rotation.y = 1.57;
+        // Three-quarter dynamic framing towards customer and camera (neither back to camera)
+        courierGroupRef.current.rotation.y = 1.15;
       }
       courierRef.current?.setPose({
         distanceWalked: walkDist,
@@ -95,7 +90,7 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
       // Customer on porch threshold waiting and greeting courier
       if (customerGroupRef.current) {
         customerGroupRef.current.position.set(0.55, 0, -0.30);
-        customerGroupRef.current.rotation.y = -1.57; // Directly facing courier (-X direction)
+        customerGroupRef.current.rotation.y = -2.10; // Three-quarter view facing courier and camera
       }
       customerRef.current?.setPose({
         distanceWalked: 0,
@@ -107,17 +102,18 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
 
       if (packageRef.current) {
         packageRef.current.position.set(courierX + 0.28, 1.05, courierZ);
-        packageRef.current.rotation.set(0, 1.57, 0);
+        packageRef.current.rotation.set(0, 1.15, 0);
       }
     } else if (localP < 0.75) {
       // -----------------------------------------------------------------------
       // Phase 2: Direct Face-to-Face Handover & Digital Verification Pulse
+      // Both faces visible in three-quarter framing (zero backs to camera)
       // -----------------------------------------------------------------------
       const handoverT = seg(localP, 0.30, 0.75);
 
       if (courierGroupRef.current) {
         courierGroupRef.current.position.set(-0.15, 0, -0.30);
-        courierGroupRef.current.rotation.y = 1.57; // Exactly facing customer (+X)
+        courierGroupRef.current.rotation.y = 1.15;
       }
       courierRef.current?.setPose({
         distanceWalked: 0.70,
@@ -129,7 +125,7 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
 
       if (customerGroupRef.current) {
         customerGroupRef.current.position.set(0.55, 0, -0.30);
-        customerGroupRef.current.rotation.y = -1.57; // Exactly facing courier (-X)
+        customerGroupRef.current.rotation.y = -2.10;
       }
       customerRef.current?.setPose({
         distanceWalked: 0,
@@ -143,7 +139,7 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
       if (packageRef.current) {
         const pkgX = THREE.MathUtils.lerp(0.12, 0.30, handoverT);
         packageRef.current.position.set(pkgX, 1.05, -0.30);
-        packageRef.current.rotation.set(0, 1.57, 0);
+        packageRef.current.rotation.set(0, 1.15, 0);
       }
     } else {
       // -----------------------------------------------------------------------
@@ -153,7 +149,7 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
 
       if (courierGroupRef.current) {
         courierGroupRef.current.position.set(-0.15, 0, -0.30);
-        courierGroupRef.current.rotation.y = 1.57;
+        courierGroupRef.current.rotation.y = 1.15;
       }
       courierRef.current?.setPose({
         distanceWalked: 0.70,
@@ -169,7 +165,7 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
       const customerZ = THREE.MathUtils.lerp(-0.30, -0.65, backT);
       if (customerGroupRef.current) {
         customerGroupRef.current.position.set(customerX, 0, customerZ);
-        customerGroupRef.current.rotation.y = -1.57;
+        customerGroupRef.current.rotation.y = -2.10;
       }
       customerRef.current?.setPose({
         distanceWalked: -backT * 0.35,
@@ -182,7 +178,7 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
       // Package safely in customer's hands moving inside
       if (packageRef.current) {
         packageRef.current.position.set(customerX - 0.25, 1.05, customerZ);
-        packageRef.current.rotation.set(0, -1.57, 0);
+        packageRef.current.rotation.set(0, -2.10, 0);
       }
     }
   });
@@ -297,6 +293,10 @@ export function UltraRealisticApartmentHandover({ localP: propLocalP = 0 }: Apar
           <planeGeometry args={[0.90, 0.55]} />
           <meshStandardMaterial color="#78350F" roughness={0.95} />
         </mesh>
+
+        {/* Warm Architectural Entryway Illumination */}
+        <pointLight position={[0.1, 1.9, 0.45]} intensity={2.6} distance={6} color="#FED7AA" />
+        <pointLight position={[-0.78, 1.85, 0.25]} intensity={1.4} distance={3.5} color="#FDE68A" />
       </group>
 
       {/* ========================================================= */}
